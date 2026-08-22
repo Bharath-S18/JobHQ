@@ -49,6 +49,21 @@ export const api = {
     }
     return await res.json();
   },
+  scanGithub: (username) =>
+    request('/api/profile/github-scan', {
+      method: 'POST',
+      body: JSON.stringify({ username }),
+    }),
+  saveStarStory: (story) =>
+    request('/api/profile/star-story', {
+      method: 'POST',
+      body: JSON.stringify({ story }),
+    }),
+  deleteStarStory: (id) =>
+    request(`/api/profile/star-story/${id}`, {
+      method: 'DELETE',
+    }),
+
 
   // Jobs
   getJobs: (params = {}) => {

@@ -156,6 +156,135 @@ app.get("/api/profile/resume-file", (req, res) => {
   res.status(404).send(`<!DOCTYPE html><html><body style="background:#18181b; color:#a1a1aa; font-family:sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; margin:0; text-align:center;"><div><p style="font-size:16px; font-weight:600; color:#f4f4f5;">No Resume Uploaded Yet</p><p style="font-size:13px;">Please upload your PDF resume to view it here.</p></div></body></html>`);
 });
 
+// ---------- GitHub Competency Extractor (/expand) ----------
+
+app.post("/api/profile/github-scan", async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username) return res.status(400).json({ error: "GitHub username is required" });
+
+    const ghUrl = `https://api.github.com/users/${encodeURIComponent(username)}/repos?sort=updated&per_page=30`;
+    const ghRes = await fetch(ghUrl, {
+      headers: {
+        "User-Agent": "JobHQ-Career-Agent",
+        "Accept": "application/vnd.github.v3+json",
+      },
+    });
+
+    if (!ghRes.ok) {
+      if (ghRes.status === 404) {
+        return res.status(404).json({ error: `GitHub user @${username} not found` });
+      }
+      throw new Error(`GitHub API returned status ${ghRes.status}`);
+    }
+
+    const repos = await ghRes.json();
+    if (!Array.isArray(repos)) {
+      return res.status(400).json({ error: "Invalid repository list received from GitHub" });
+    }
+
+    const languageCounts = {};
+    const extractedCompetencies = [];
+    const notableRepos = [];
+
+    for (const repo of repos) {
+      if (repo.fork) continue;
+      if (repo.language) {
+        languageCounts[repo.language] = (languageCounts[repo.language] || 0) + 1;
+      }
+
+      if (repo.stargazers_count > 0 || repo.description || repo.topics?.length > 0) {
+        notableRepos.push({
+          name: repo.name,
+          description: repo.description || "",
+          language: repo.language || "General",
+          stars: repo.stargazers_count || 0,
+          url: repo.html_url,
+          topics: repo.topics || [],
+        });
+      }
+    }
+
+    for (const [lang, count] of Object.entries(languageCounts)) {
+      const confidence = Math.min(98, 70 + count * 6);
+      extractedCompetencies.push({
+        skill: lang,
+        category: "Programming Language",
+        source: `${username} (${count} repositories)`,
+        score: confidence,
+      });
+    }
+
+    const allTopics = repos.flatMap((r) => r.topics || []);
+    const uniqueTopics = [...new Set(allTopics)];
+    for (const topic of uniqueTopics) {
+      if (["react", "nextjs", "vue", "angular", "node", "express", "tailwind", "fastapi", "django", "docker", "kubernetes", "graphql", "typescript"].includes(topic.toLowerCase())) {
+        extractedCompetencies.push({
+          skill: topic.toUpperCase(),
+          category: "Framework / Technology",
+          source: `GitHub Topics (@${username})`,
+          score: 88,
+        });
+      }
+    }
+
+    res.json({
+      ok: true,
+      username,
+      totalRepos: repos.length,
+      competencies: extractedCompetencies,
+      notableRepos: notableRepos.slice(0, 6),
+    });
+  } catch (err) {
+    console.error("[GitHub Scan Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------- STAR Story Bank CRUD ----------
+
+app.post("/api/profile/star-story", (req, res) => {
+  try {
+    const { story } = req.body;
+    if (!story || !story.title) return res.status(400).json({ error: "Story title is required" });
+
+    const profile = getProfile();
+    const structured = profile?.structured || {};
+    const starBank = Array.isArray(structured.starBank) ? [...structured.starBank] : [];
+
+    const storyId = story.id || Date.now().toString();
+    const updatedStory = { ...story, id: storyId, updatedAt: new Date().toISOString() };
+
+    const existingIdx = starBank.findIndex((s) => s.id === storyId);
+    if (existingIdx >= 0) {
+      starBank[existingIdx] = updatedStory;
+    } else {
+      starBank.unshift(updatedStory);
+    }
+
+    structured.starBank = starBank;
+    saveProfile(profile?.resume_text || "", structured);
+    res.json({ ok: true, story: updatedStory, starBank });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/profile/star-story/:id", (req, res) => {
+  try {
+    const profile = getProfile();
+    const structured = profile?.structured || {};
+    const starBank = Array.isArray(structured.starBank) ? structured.starBank.filter((s) => s.id !== req.params.id) : [];
+
+    structured.starBank = starBank;
+    saveProfile(profile?.resume_text || "", structured);
+    res.json({ ok: true, starBank });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // ---------- Google OAuth & Gmail Alerts ----------
 
 const getAuthStatusHandler = (req, res) => {
