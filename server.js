@@ -14,8 +14,8 @@ import {
   getStoredUserProfile,
 } from "./src/gmailAuth.js";
 import { fetchLinkedInJobAlerts } from "./src/parseLinkedInAlerts.js";
-import { enrichJob, fetchGreenhouseJob, fetchLeverJob } from "./src/jobEnrich.js";
-import { tailorApplication, scoreMatch } from "./src/tailor.js";
+import { enrichJob, fetchGreenhouseJob, fetchLeverJob, scrapeJobFromUrl } from "./src/jobEnrich.js";
+import { tailorApplication, scoreMatch, evaluate5DFit } from "./src/tailor.js";
 import {
   runHunterOnce,
   getHunterStatus,
@@ -402,6 +402,131 @@ app.post("/api/jobs", (req, res) => {
     });
     res.json({ ok: true, id: result.lastInsertRowid });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------- Direct URL Scraper & 5D Ranking Engine ----------
+
+app.post("/api/jobs/scrape-url", async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ error: "Job URL is required" });
+
+    const scraped = await scrapeJobFromUrl(url);
+    upsertJob(scraped);
+
+    const saved = listJobs().find((j) => j.url === scraped.url || j.url === scraped.finalUrl);
+    if (!saved) return res.status(500).json({ error: "Failed to save scraped job" });
+
+    // Automatically calculate 5-dimension fit against candidate master profile
+    const profile = getProfile();
+    if (profile?.resume_text || profile?.structured) {
+      const fitResult = await evaluate5DFit({
+        resumeText: profile.resume_text,
+        structured: profile.structured,
+        jobTitle: saved.title,
+        company: saved.company,
+        jobDescription: saved.description,
+      });
+
+      updateJobMatch(saved.id, {
+        score: fitResult.compositeScore,
+        reason: fitResult.summary,
+      });
+
+      return res.json({
+        ok: true,
+        job: {
+          ...saved,
+          match_score: fitResult.compositeScore,
+          match_reason: fitResult.summary,
+          fit5D: fitResult,
+        },
+      });
+    }
+
+    res.json({ ok: true, job: saved });
+  } catch (err) {
+    console.error("[Scrape URL Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/jobs/:id/rank", async (req, res) => {
+  try {
+    const job = getJob(req.params.id);
+    if (!job) return res.status(404).json({ error: "Job not found" });
+
+    const profile = getProfile();
+    if (!profile || (!profile.resume_text && !profile.structured)) {
+      return res.status(400).json({ error: "Upload your resume in Profile Studio first to rank jobs" });
+    }
+
+    const fitResult = await evaluate5DFit({
+      resumeText: profile.resume_text,
+      structured: profile.structured,
+      jobTitle: job.title,
+      company: job.company,
+      jobDescription: job.description,
+    });
+
+    updateJobMatch(job.id, {
+      score: fitResult.compositeScore,
+      reason: fitResult.summary,
+    });
+
+    res.json({
+      ok: true,
+      jobId: job.id,
+      matchScore: fitResult.compositeScore,
+      matchReason: fitResult.summary,
+      fit5D: fitResult,
+    });
+  } catch (err) {
+    console.error("[Rank Job Error]:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/jobs/rank-all", async (req, res) => {
+  try {
+    const profile = getProfile();
+    if (!profile || (!profile.resume_text && !profile.structured)) {
+      return res.status(400).json({ error: "Upload your resume in Profile Studio first to rank jobs" });
+    }
+
+    const allJobs = listJobs();
+    const rankedResults = [];
+
+    for (const job of allJobs) {
+      const fitResult = await evaluate5DFit({
+        resumeText: profile.resume_text,
+        structured: profile.structured,
+        jobTitle: job.title,
+        company: job.company,
+        jobDescription: job.description,
+      });
+
+      updateJobMatch(job.id, {
+        score: fitResult.compositeScore,
+        reason: fitResult.summary,
+      });
+
+      rankedResults.push({
+        id: job.id,
+        title: job.title,
+        company: job.company,
+        score: fitResult.compositeScore,
+        recommendation: fitResult.recommendation,
+        reason: fitResult.summary,
+        fit5D: fitResult,
+      });
+    }
+
+    res.json({ ok: true, rankedCount: rankedResults.length, results: rankedResults });
+  } catch (err) {
+    console.error("[Rank All Error]:", err);
     res.status(500).json({ error: err.message });
   }
 });

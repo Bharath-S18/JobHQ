@@ -9,10 +9,13 @@ import {
   ExternalLink,
   Trash2,
   Filter,
-  CheckCircle,
+  CheckCircle2,
   FileCheck2,
   RefreshCw,
-  Globe
+  Globe,
+  Link,
+  ArrowRight,
+  Gauge
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -26,6 +29,10 @@ export default function HunterView({
   const [sourceFilter, setSourceFilter] = useState('all');
   const [hunting, setHunting] = useState(false);
   const [sampleLoading, setSampleLoading] = useState(false);
+  const [directUrl, setDirectUrl] = useState('');
+  const [scrapingUrl, setScrapingUrl] = useState(false);
+  const [rankingAll, setRankingAll] = useState(false);
+  const [feedback, setFeedback] = useState(null);
 
   const filteredJobs = jobs.filter((job) => {
     const matchesSearch =
@@ -41,6 +48,44 @@ export default function HunterView({
 
     return matchesSearch && matchesSource;
   });
+
+  const handleScrapeDirectUrl = async (e) => {
+    e.preventDefault();
+    if (!directUrl.trim()) return;
+
+    setScrapingUrl(true);
+    setFeedback(null);
+    try {
+      const res = await api.scrapeJobUrl(directUrl.trim());
+      setDirectUrl('');
+      setFeedback({
+        type: 'success',
+        text: `Scraped "${res.job.title}" @ ${res.job.company}. 5D Fit Score: ${res.job.match_score || 80}%`,
+      });
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      setFeedback({ type: 'error', text: err.message || 'Scraping failed' });
+    } finally {
+      setScrapingUrl(false);
+    }
+  };
+
+  const handleRankAll = async () => {
+    setRankingAll(true);
+    setFeedback(null);
+    try {
+      const res = await api.rankAllJobs();
+      setFeedback({
+        type: 'success',
+        text: `5-Dimension Rubric evaluated for all ${res.rankedCount} jobs in your pipeline!`,
+      });
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      setFeedback({ type: 'error', text: err.message || 'Batch ranking failed' });
+    } finally {
+      setRankingAll(false);
+    }
+  };
 
   const handleRunScout = async () => {
     setHunting(true);
@@ -89,11 +134,20 @@ export default function HunterView({
             <span className="rounded bg-indigo-500/20 text-indigo-300 px-2 py-0.5 text-xs font-mono">/scrape</span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Scout live postings across Greenhouse, Lever, LinkedIn alerts, and direct URL imports.
+            Scout live postings across Greenhouse, Lever, LinkedIn alerts, or import any arbitrary posting URL.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleRankAll}
+            disabled={rankingAll || jobs.length === 0}
+            className="flex items-center gap-1.5 rounded-xl border border-purple-500/40 bg-purple-950/30 px-3.5 py-2 text-xs font-semibold text-purple-300 hover:bg-purple-900/40 transition disabled:opacity-50"
+          >
+            <Gauge className={`h-3.5 w-3.5 ${rankingAll ? 'animate-spin' : ''}`} />
+            <span>{rankingAll ? 'Evaluating 5D...' : 'Batch Rank 5D'}</span>
+          </button>
+
           <button
             onClick={handleLoadSamples}
             disabled={sampleLoading}
@@ -108,7 +162,7 @@ export default function HunterView({
             className="flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-3.5 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-500/20 transition"
           >
             <Plus className="h-3.5 w-3.5" />
-            <span>Add Single URL</span>
+            <span>Add Manual</span>
           </button>
 
           <button
@@ -122,16 +176,53 @@ export default function HunterView({
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
+      {/* Direct URL Scraper Bar */}
+      <div className="glass-panel rounded-2xl p-4 border border-indigo-500/20 bg-gradient-to-r from-indigo-950/20 via-slate-900/60 to-slate-900/60">
+        <form onSubmit={handleScrapeDirectUrl} className="flex flex-col sm:flex-row items-center gap-3">
+          <div className="relative flex-1 w-full">
+            <Link className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-indigo-400" />
+            <input
+              type="url"
+              required
+              value={directUrl}
+              onChange={(e) => setDirectUrl(e.target.value)}
+              placeholder="Paste any job posting URL (Greenhouse, Lever, LinkedIn, or direct company career page)..."
+              className="w-full rounded-xl border border-slate-800 bg-slate-950/80 pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={scrapingUrl || !directUrl}
+            className="w-full sm:w-auto rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-semibold text-white hover:bg-indigo-500 transition disabled:opacity-50 shrink-0 shadow-md shadow-indigo-600/20"
+          >
+            {scrapingUrl ? 'Scraping & Ranking...' : 'Scrape & Ingest'}
+          </button>
+        </form>
+      </div>
+
+      {/* Feedback Banner */}
+      {feedback && (
+        <div
+          className={`rounded-xl p-3.5 text-xs font-medium flex items-center gap-2 border ${
+            feedback.type === 'success'
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+              : 'bg-red-500/10 border-red-500/30 text-red-300'
+          }`}
+        >
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          <span>{feedback.text}</span>
+        </div>
+      )}
+
+      {/* Filter & Search Controls */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-        
         <div className="relative w-full sm:w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by title, company, or keyword..."
+            placeholder="Search by title, company, keyword..."
             className="w-full rounded-xl border border-slate-800 bg-slate-900/80 pl-9 pr-4 py-2 text-xs text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
           />
         </div>
@@ -153,14 +244,13 @@ export default function HunterView({
             </button>
           ))}
         </div>
-
       </div>
 
       {/* Jobs Grid */}
       {filteredJobs.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-800 p-12 text-center space-y-3">
           <p className="text-sm text-slate-400">No postings matching the selected filters.</p>
-          <p className="text-xs text-slate-500">Click "Run Autonomous Scout" or "Add Single URL" to import positions.</p>
+          <p className="text-xs text-slate-500">Paste a job URL above, click "Load Verified Samples", or run the Scout.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -172,12 +262,12 @@ export default function HunterView({
               <div className="space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700/50">
-                    {job.ats || 'Standard'}
+                    {job.ats || 'Direct'}
                   </span>
                   {typeof job.match_score === 'number' && (
                     <span className="flex items-center gap-1 text-xs font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
                       <Sparkles className="h-3 w-3" />
-                      {job.match_score}%
+                      {job.match_score}% Fit
                     </span>
                   )}
                 </div>
@@ -187,10 +277,16 @@ export default function HunterView({
                 </h3>
                 
                 <p className="text-xs font-medium text-slate-300">
-                  {job.company || 'Unknown Company'}
+                  {job.company || 'Company'} {job.location ? `• ${job.location}` : ''}
                 </p>
 
-                {job.description && (
+                {job.match_reason && (
+                  <p className="text-xs text-indigo-300/80 line-clamp-2 leading-relaxed bg-indigo-950/20 p-2 rounded-lg border border-indigo-500/10">
+                    {job.match_reason}
+                  </p>
+                )}
+
+                {job.description && !job.match_reason && (
                   <p className="text-xs text-slate-400 line-clamp-3 leading-relaxed">
                     {job.description}
                   </p>

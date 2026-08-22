@@ -76,6 +76,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(jobData),
     }),
+  scrapeJobUrl: (url) =>
+    request('/api/jobs/scrape-url', {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    }),
+  rankJob: (id) => request(`/api/jobs/${id}/rank`, { method: 'POST' }),
+  rankAllJobs: () => request('/api/jobs/rank-all', { method: 'POST' }),
   deleteJob: (id) => request(`/api/jobs/${id}`, { method: 'DELETE' }),
   loadSampleJobs: () => request('/api/jobs/sample', { method: 'POST' }),
   updateJobStatus: (id, status, note) => 

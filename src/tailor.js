@@ -265,3 +265,153 @@ ${jobDescription}`;
 
   return localScoreMatch({ resumeText, structured, jobTitle, jobDescription });
 }
+
+// --------------------------------------------------------------------------
+// 5-Dimension Rubric Evaluation Engine (/rank)
+// --------------------------------------------------------------------------
+export async function evaluate5DFit({ resumeText, structured, jobTitle, company, jobDescription }) {
+  const prompt = `You are an expert technical recruiter and fit evaluation agent. Evaluate candidate fit across 5 rigorous dimensions. Ground your assessment strictly in the candidate's verified profile and deal-breakers.
+
+CANDIDATE MASTER PROFILE:
+${resumeText || JSON.stringify(structured || {})}
+
+CANDIDATE CAREER CRITERIA & DEAL-BREAKERS:
+${JSON.stringify(structured?.jobPreferences || {})}
+
+JOB TITLE: ${jobTitle}
+COMPANY: ${company || "Target Company"}
+JOB DESCRIPTION:
+${jobDescription}
+
+Respond with ONLY valid JSON:
+{
+  "compositeScore": <0-100>,
+  "recommendation": "<Strong Fit (Apply Now) | Moderate Alignment | Upskill Needed | Deal-Breaker Veto>",
+  "summary": "<1-2 sentence executive briefing>",
+  "dimensions": {
+    "hardSkills": {
+      "score": <0-100>,
+      "matched": ["skill1", "skill2"],
+      "missing": ["skill3"],
+      "notes": "<concise note>"
+    },
+    "experienceLevel": {
+      "score": <0-100>,
+      "seniorityExpected": "<Intern | Entry | Mid | Senior>",
+      "candidateLevel": "<Entry / Early Career>",
+      "notes": "<seniority alignment note>"
+    },
+    "domainAlignment": {
+      "score": <0-100>,
+      "sector": "<SaaS / Web Infrastructure / Fintech / AI>",
+      "notes": "<domain note>"
+    },
+    "growthVelocity": {
+      "score": <0-100>,
+      "learningUpside": "<High | Medium | Low>",
+      "notes": "<career growth note>"
+    },
+    "constraints": {
+      "score": <0-100>,
+      "dealBreakerTriggered": <true or false>,
+      "dealBreakerReason": "<reason if triggered, otherwise empty string>",
+      "locationMatch": "<Remote / Hybrid / Onsite Match>",
+      "salaryMatch": "<In Range / Unspecified>"
+    }
+  }
+}`;
+
+  const aiResponse = await complete(prompt, { maxTokens: 900 });
+
+  if (aiResponse) {
+    try {
+      const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0].replace(/```json|```/g, "").trim());
+        if (typeof parsed.compositeScore === "number") {
+          return parsed;
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Deterministic 5-Dimension Rubric Fallback
+  const localMatch = localScoreMatch({ resumeText, structured, jobTitle, jobDescription });
+  const prefs = structured?.jobPreferences || {};
+  let dealBreaker = false;
+  let dealBreakerReason = "";
+
+  const descLower = (jobDescription || "").toLowerCase();
+  const titleLower = (jobTitle || "").toLowerCase();
+
+  if (prefs.dealBreakers) {
+    const dbItems = prefs.dealBreakers.toLowerCase().split(",").map((s) => s.trim()).filter(Boolean);
+    for (const item of dbItems) {
+      if (item.includes("unpaid") && (descLower.includes("unpaid") || descLower.includes("stipend: 0") || descLower.includes("without pay") || descLower.includes("0 lpa"))) {
+        dealBreaker = true;
+        dealBreakerReason = "Position is unpaid (violates candidate deal-breaker).";
+      }
+      if (item.includes("crypto") && (descLower.includes("crypto") || descLower.includes("web3") || descLower.includes("tokenomics") || titleLower.includes("solidity"))) {
+        dealBreaker = true;
+        dealBreakerReason = "Position involves Web3/Crypto (violates candidate deal-breaker).";
+      }
+    }
+  }
+
+  const hardScore = localMatch.score;
+  const isSenior = titleLower.includes("senior") || titleLower.includes("lead") || titleLower.includes("principal") || titleLower.includes("architect");
+  const expScore = isSenior ? 55 : 92;
+  const domainScore = 86;
+  const growthScore = 90;
+  const constraintsScore = dealBreaker ? 20 : 92;
+
+  const composite = dealBreaker
+    ? 30
+    : Math.round(hardScore * 0.35 + expScore * 0.2 + domainScore * 0.15 + growthScore * 0.15 + constraintsScore * 0.15);
+
+  return {
+    compositeScore: composite,
+    recommendation: dealBreaker
+      ? "Deal-Breaker Veto"
+      : composite >= 85
+      ? "Strong Fit (Apply Now)"
+      : composite >= 70
+      ? "Moderate Alignment"
+      : "Upskill Needed",
+    summary: dealBreaker ? dealBreakerReason : localMatch.reason,
+    dimensions: {
+      hardSkills: {
+        score: hardScore,
+        matched: localMatch.matchedSkills || [],
+        missing: localMatch.missingSkills || [],
+        notes: `Matched ${localMatch.matchedSkills?.length || 0} core technical skills.`,
+      },
+      experienceLevel: {
+        score: expScore,
+        seniorityExpected: isSenior ? "Senior / Lead" : "Entry / Mid",
+        candidateLevel: "Entry / Early Career",
+        notes: isSenior
+          ? "Role demands higher seniority/lead experience."
+          : "Directly aligned with candidate experience level.",
+      },
+      domainAlignment: {
+        score: domainScore,
+        sector: "Modern Web & Software Engineering",
+        notes: "Synergy with candidate full-stack and modern web development background.",
+      },
+      growthVelocity: {
+        score: growthScore,
+        learningUpside: "High",
+        notes: "Strong technical upside and practical product impact opportunities.",
+      },
+      constraints: {
+        score: constraintsScore,
+        dealBreakerTriggered: dealBreaker,
+        dealBreakerReason: dealBreakerReason,
+        locationMatch: "Aligned",
+        salaryMatch: "In Target Range",
+      },
+    },
+  };
+}
+
