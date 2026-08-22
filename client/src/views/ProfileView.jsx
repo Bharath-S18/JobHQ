@@ -47,19 +47,20 @@ export default function ProfileView({ profile, onProfileUpdated }) {
   });
 
   const [preferences, setPreferences] = useState({
-    targetRoles: 'Full Stack Engineer, Frontend Engineer, Software Developer',
-    targetLocations: 'Bengaluru, Remote, Hybrid',
-    minSalary: '₹12,00,000 / year',
-    workAuthorization: 'Authorized to work in India',
-    dealBreakers: 'No unpaid internships, No web3/crypto gambling',
+    targetRoles: '',
+    targetLocations: '',
+    minSalary: '',
+    workAuthorization: '',
+    dealBreakers: '',
   });
 
   const [skills, setSkills] = useState({
-    languages: ['JavaScript', 'TypeScript', 'Python', 'SQL'],
-    frameworks: ['React', 'Next.js', 'Node.js', 'Express', 'Tailwind CSS'],
-    databases: ['PostgreSQL', 'SQLite', 'MongoDB', 'Redis'],
-    tools: ['Git', 'Docker', 'REST APIs', 'Vite', 'Jest'],
+    languages: [],
+    frameworks: [],
+    databases: [],
+    tools: [],
   });
+
 
   const [newSkillText, setNewSkillText] = useState('');
   const [selectedSkillCategory, setSelectedSkillCategory] = useState('frameworks');
@@ -403,7 +404,8 @@ export default function ProfileView({ profile, onProfileUpdated }) {
                     type="text"
                     value={preferences.targetRoles || ''}
                     onChange={(e) => setPreferences({ ...preferences, targetRoles: e.target.value })}
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                    placeholder="e.g. Full Stack Engineer, Frontend Developer"
+                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white placeholder:text-slate-600 focus:border-indigo-500 focus:outline-none"
                   />
                 </div>
 
@@ -413,7 +415,8 @@ export default function ProfileView({ profile, onProfileUpdated }) {
                     type="text"
                     value={preferences.targetLocations || ''}
                     onChange={(e) => setPreferences({ ...preferences, targetLocations: e.target.value })}
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                    placeholder="e.g. Remote, Hybrid, Bengaluru"
+                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white placeholder:text-slate-600 focus:border-indigo-500 focus:outline-none"
                   />
                 </div>
 
@@ -423,7 +426,8 @@ export default function ProfileView({ profile, onProfileUpdated }) {
                     type="text"
                     value={preferences.minSalary || ''}
                     onChange={(e) => setPreferences({ ...preferences, minSalary: e.target.value })}
-                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                    placeholder="e.g. ₹12,00,000 / year or $110k"
+                    className="w-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white placeholder:text-slate-600 focus:border-indigo-500 focus:outline-none"
                   />
                 </div>
 
@@ -489,21 +493,25 @@ export default function ProfileView({ profile, onProfileUpdated }) {
                   <div key={cat} className="space-y-1.5 p-3 rounded-lg border border-slate-800/80 bg-slate-900/40">
                     <span className="text-[11px] font-bold text-indigo-300 capitalize">{cat}</span>
                     <div className="flex flex-wrap gap-1.5 pt-1">
-                      {Array.isArray(list) && list.map((item, idx) => (
-                        <span
-                          key={idx}
-                          className="inline-flex items-center gap-1 rounded-md bg-slate-800 px-2 py-0.5 text-[11px] text-slate-200 border border-slate-700"
-                        >
-                          <span>{item}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveSkill(cat, item)}
-                            className="text-slate-400 hover:text-red-400 transition"
+                      {Array.isArray(list) && list.length > 0 ? (
+                        list.map((item, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center gap-1 rounded-md bg-slate-800 px-2 py-0.5 text-[11px] text-slate-200 border border-slate-700"
                           >
-                            ×
-                          </button>
-                        </span>
-                      ))}
+                            <span>{item}</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveSkill(cat, item)}
+                              className="text-slate-400 hover:text-red-400 transition"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-[11px] text-slate-500 italic">No {cat} added yet</span>
+                      )}
                     </div>
                   </div>
                 ))}
