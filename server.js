@@ -15,7 +15,7 @@ import {
 } from "./src/gmailAuth.js";
 import { fetchLinkedInJobAlerts } from "./src/parseLinkedInAlerts.js";
 import { enrichJob, fetchGreenhouseJob, fetchLeverJob, scrapeJobFromUrl } from "./src/jobEnrich.js";
-import { tailorApplication, scoreMatch, evaluate5DFit } from "./src/tailor.js";
+import { tailorApplication, scoreMatch, evaluate5DFit, runDrafterReviewerPipeline } from "./src/tailor.js";
 import { scoutAllPortals } from "./src/scrapers/portalManager.js";
 import {
   runHunterOnce,
@@ -645,14 +645,19 @@ app.post("/api/jobs/:id/tailor", async (req, res) => {
     const profile = getProfile();
     if (!profile) return res.status(400).json({ error: "Save your resume first" });
 
-    const result = await tailorApplication({
+    const result = await runDrafterReviewerPipeline({
       resumeText: profile.resume_text,
       structured: profile.structured,
       jobTitle: job.title,
       company: job.company,
       jobDescription: job.description,
     });
-    updateJobTailoring(job.id, result);
+
+    updateJobTailoring(job.id, {
+      resumeBullets: result.resumeBullets,
+      coverLetter: result.coverLetter,
+    });
+
     res.json(result);
   } catch (err) {
     console.error("[Tailor Error]:", err);
