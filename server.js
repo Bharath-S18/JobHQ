@@ -15,8 +15,17 @@ import {
 } from "./src/gmailAuth.js";
 import { fetchLinkedInJobAlerts } from "./src/parseLinkedInAlerts.js";
 import { enrichJob, fetchGreenhouseJob, fetchLeverJob, scrapeJobFromUrl } from "./src/jobEnrich.js";
-import { tailorApplication, scoreMatch, evaluate5DFit, runDrafterReviewerPipeline } from "./src/tailor.js";
 import { scoutAllPortals } from "./src/scrapers/portalManager.js";
+import {
+  tailorApplication,
+  scoreMatch,
+  evaluate5DFit,
+  runDrafterReviewerPipeline,
+  generateCrmFollowup,
+  generateInterviewBriefing,
+  evaluateInterviewTurn,
+  aggregateUpskillGaps,
+} from "./src/tailor.js";
 import {
   runHunterOnce,
   getHunterStatus,
@@ -743,6 +752,94 @@ app.get("/api/jobs/:id/match", (req, res) => {
     const match = getJobMatch(req.params.id);
     if (!match) return res.status(404).json({ error: "Match not found" });
     res.json(match);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------- CRM Follow-ups, Interview Hub & Upskill Analytics ----------
+
+app.post("/api/crm/generate-followup", async (req, res) => {
+  try {
+    const { jobId, type, notes } = req.body;
+    let job = null;
+    if (jobId) job = getJob(jobId);
+    const profile = getProfile();
+    const result = await generateCrmFollowup({
+      type: type || "followup",
+      jobTitle: job?.title,
+      company: job?.company,
+      candidateName: profile?.structured?.personalInfo?.fullName,
+      profile,
+      notes: notes || job?.notes || "",
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/interview/briefing", async (req, res) => {
+  try {
+    const { jobId } = req.body;
+    const job = jobId ? getJob(jobId) : null;
+    const profile = getProfile();
+    const briefing = await generateInterviewBriefing({
+      jobTitle: job?.title,
+      company: job?.company,
+      jobDescription: job?.description,
+      profile,
+    });
+    res.json(briefing);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/interview/chat", async (req, res) => {
+  try {
+    const { jobId, conversation, latestAnswer } = req.body;
+    const job = jobId ? getJob(jobId) : null;
+    const profile = getProfile();
+    const evaluation = await evaluateInterviewTurn({
+      jobTitle: job?.title,
+      company: job?.company,
+      conversation: conversation || [],
+      latestAnswer: latestAnswer || "",
+      profile,
+    });
+    res.json(evaluation);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/analytics/upskill-heatmap", (req, res) => {
+  try {
+    const jobs = listJobs();
+    const profile = getProfile();
+    const gaps = aggregateUpskillGaps({ jobs, profile });
+    res.json(gaps);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/analytics/add-skill-to-profile", (req, res) => {
+  try {
+    const { skill } = req.body;
+    if (!skill) return res.status(400).json({ error: "Skill required" });
+    const profile = getProfile() || { structured: {} };
+    const structured = profile.structured || {};
+    structured.skills = structured.skills || {};
+    structured.skills.technical = structured.skills.technical || [];
+
+    const lower = skill.toLowerCase().trim();
+    if (!structured.skills.technical.some((s) => s.toLowerCase().trim() === lower)) {
+      structured.skills.technical.push(skill);
+      saveProfile(profile.resume_text || "", structured);
+    }
+    res.json({ ok: true, skills: structured.skills.technical });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

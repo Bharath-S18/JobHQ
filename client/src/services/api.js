@@ -103,6 +103,33 @@ export const api = {
   scanGmailAlerts: () => request('/api/scan', { method: 'POST' }),
   getGmailAlerts: () => request('/api/gmail/alerts'),
 
+  // CRM & Follow-ups
+  generateCrmFollowup: (jobId, type, notes) =>
+    request('/api/crm/generate-followup', {
+      method: 'POST',
+      body: JSON.stringify({ jobId, type, notes }),
+    }),
+
+  // Interview Hub & AI Mock
+  getInterviewBriefing: (jobId) =>
+    request('/api/interview/briefing', {
+      method: 'POST',
+      body: JSON.stringify({ jobId }),
+    }),
+  sendInterviewChat: (jobId, conversation, latestAnswer) =>
+    request('/api/interview/chat', {
+      method: 'POST',
+      body: JSON.stringify({ jobId, conversation, latestAnswer }),
+    }),
+
+  // Career Intelligence & Upskill Heatmap
+  getUpskillHeatmap: () => request('/api/analytics/upskill-heatmap'),
+  addSkillToProfile: (skill) =>
+    request('/api/analytics/add-skill-to-profile', {
+      method: 'POST',
+      body: JSON.stringify({ skill }),
+    }),
+
   // Hunter & Automation
   getHunterStatus: () => request('/api/hunter/status'),
   runHunter: (config) => request('/api/hunter/run', { method: 'POST', body: JSON.stringify(config || {}) }),

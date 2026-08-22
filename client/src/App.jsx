@@ -133,9 +133,15 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'interview' && <InterviewView jobs={jobs} />}
+          {activeTab === 'interview' && <InterviewView jobs={jobs} profile={profile} />}
 
-          {activeTab === 'upskill' && <UpskillView jobs={jobs} />}
+          {activeTab === 'upskill' && (
+            <UpskillView
+              jobs={jobs}
+              profile={profile}
+              onRefreshProfile={loadData}
+            />
+          )}
         </main>
       </div>
 

@@ -224,6 +224,13 @@ Thank you for your time and consideration.
 Warm regards,
 ${candidateName}`;
 
+  return {
+    resumeBullets: bullets.join("\n"),
+    coverLetter,
+    provider: "local-rule-engine",
+  };
+}
+
 // --------------------------------------------------------------------------
 // LaTeX Resume Template Generator
 // --------------------------------------------------------------------------
@@ -576,4 +583,314 @@ Respond with ONLY valid JSON:
     },
   };
 }
+
+// --------------------------------------------------------------------------
+// Step 6: Pipeline CRM Follow-up & Communication Generator
+// --------------------------------------------------------------------------
+export async function generateCrmFollowup({ type = "followup", jobTitle, company, candidateName, profile, notes }) {
+  const cName = candidateName || profile?.structured?.personalInfo?.fullName || "Candidate";
+  const comp = company || "Hiring Team";
+  const title = jobTitle || "Software Engineer";
+
+  const prompt = `You are an elite career coach. Draft a concise, high-impact, professional email for a job candidate.
+Type of email: ${type} (Options: followup for silence after application, thank_you for post-interview, status_check, offer_inquiry).
+Candidate Name: ${cName}
+Target Company: ${comp}
+Target Role: ${title}
+Context Notes: ${notes || "Submitted application recently"}
+
+Write a polite, professional, and confident email with a clear Subject Line and Body.
+Do not invent facts. Ground it in professional enthusiasm and engineering competence.`;
+
+  try {
+    const aiResp = await complete(prompt, { maxTokens: 800 });
+    if (aiResp && aiResp.trim().length > 30) {
+      return {
+        content: aiResp.trim(),
+        type,
+        provider: getActiveProvider(),
+      };
+    }
+  } catch (e) {}
+
+  // Deterministic Fallback Templates
+  let draft = "";
+  if (type === "thank_you") {
+    draft = `Subject: Thank You - ${title} Interview - ${cName}
+
+Dear Hiring Team at ${comp},
+
+Thank you for the opportunity to speak today regarding the ${title} position. I truly enjoyed learning more about your team's engineering goals and technical architecture.
+
+Our conversation reinforced my enthusiasm for joining ${comp}. I am confident that my hands-on background in full-stack development, clean modular code design, and proactive problem solving will allow me to hit the ground running and contribute to your milestones.
+
+Please let me know if you need any additional code samples, references, or details from my end.
+
+Thank you again for your time and consideration.
+
+Warm regards,
+${cName}`;
+  } else if (type === "offer_inquiry") {
+    draft = `Subject: Inquiring on Status & Timeline - ${title} - ${cName}
+
+Dear ${comp} Team,
+
+I hope you are having a productive week.
+
+I am writing to express my continued strong interest in the ${title} position at ${comp}. I wanted to check in regarding the timeline for the next steps in the evaluation process.
+
+I remain very enthusiastic about the opportunity to contribute to your engineering initiatives and would be glad to provide any further context if helpful.
+
+Best regards,
+${cName}`;
+  } else {
+    // Default 7-10 day silence follow-up
+    draft = `Subject: Following Up on Application - ${title} - ${cName}
+
+Dear Hiring Team at ${comp},
+
+I hope this note finds you well.
+
+I am writing to follow up on my application for the ${title} role submitted recently. With a solid foundation in modern full-stack development and practical experience delivering robust, scalable software, I remain deeply excited about the prospect of contributing to ${comp}.
+
+I understand you receive many applications and are busy reviewing candidates. I wanted to reiterate my strong interest and check if there are any additional materials or portfolio links I can share.
+
+Thank you for your time and consideration, and I look forward to hearing from you.
+
+Best regards,
+${cName}`;
+  }
+
+  return {
+    content: draft,
+    type,
+    provider: "local-template-engine",
+  };
+}
+
+// --------------------------------------------------------------------------
+// Step 7: STAR Interview Hub & AI Mock Interview Simulator
+// --------------------------------------------------------------------------
+export async function generateInterviewBriefing({ jobTitle, company, jobDescription, profile }) {
+  const comp = company || "Target Company";
+  const title = jobTitle || "Software Engineer";
+  const desc = jobDescription || "Software Engineering Role";
+  const starStories = profile?.structured?.starStories || [];
+
+  const prompt = `You are a Principal Tech Interviewer and Recruiter. Generate a comprehensive Interview Prep Briefing for a candidate interviewing for:
+Company: ${comp}
+Role: ${title}
+Job Description:
+${desc.slice(0, 1500)}
+
+Return a strict JSON object with this exact structure:
+{
+  "companyMission": "Brief company overview and technical focus",
+  "coreTechFocus": ["tech1", "tech2", "tech3", "tech4"],
+  "predictedQuestions": [
+    { "type": "Technical Architecture", "question": "Question text...", "keyPoints": "What interviewers look for..." },
+    { "type": "Behavioral / STAR", "question": "Question text...", "keyPoints": "How to structure answer..." },
+    { "type": "System Design & Scale", "question": "Question text...", "keyPoints": "Key architectural considerations..." }
+  ],
+  "strategicQuestionsToAsk": [
+    "High-impact question 1 to ask the engineering manager",
+    "High-impact question 2 regarding team tech roadmap",
+    "High-impact question 3 regarding code review and deployment culture"
+  ]
+}`;
+
+  try {
+    const raw = await complete(prompt, { maxTokens: 1200 });
+    if (raw) {
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        return {
+          ...parsed,
+          starStories,
+          provider: getActiveProvider(),
+        };
+      }
+    }
+  } catch (e) {}
+
+  // Deterministic Fallback Briefing
+  return {
+    companyMission: `${comp} focuses on delivering robust, high-performance digital products with scalable modern software architecture.`,
+    coreTechFocus: ["Full-Stack JavaScript/TypeScript", "REST & GraphQL APIs", "Database Optimization", "Component Modularization"],
+    predictedQuestions: [
+      {
+        type: "Technical Architecture",
+        question: `How would you architect a high-availability RESTful service for ${comp}'s core workflows while maintaining sub-100ms response times?`,
+        keyPoints: "Discuss indexing, Redis caching, connection pooling, and asynchronous job queues.",
+      },
+      {
+        type: "Behavioral / STAR (Conflict & Deadlines)",
+        question: "Tell me about a time you faced conflicting technical priorities or a looming production deadline. How did you decide what to ship?",
+        keyPoints: "Highlight scope triage, communication with stakeholders, and preventing technical debt.",
+      },
+      {
+        type: "System Performance & Debugging",
+        question: "Describe a tricky production bug or performance bottleneck you resolved. What was your diagnostic process?",
+        keyPoints: "Walk through telemetry, root-cause isolation, regression testing, and rollback safety.",
+      },
+    ],
+    strategicQuestionsToAsk: [
+      "What are the biggest technical hurdles or architectural refactors the team is tackling this quarter?",
+      "How does the engineering team balance new feature velocity with code quality, test automation, and tech debt reduction?",
+      "What does success look like in the first 90 days for an engineer stepping into this role?",
+    ],
+    starStories,
+    provider: "local-rule-engine",
+  };
+}
+
+export async function evaluateInterviewTurn({ jobTitle, company, conversation = [], latestAnswer, profile }) {
+  const comp = company || "Target Company";
+  const title = jobTitle || "Software Engineer";
+  const answer = (latestAnswer || "").trim();
+
+  if (!answer) {
+    return {
+      score: 50,
+      feedback: "Please provide an answer to receive feedback.",
+      followupQuestion: "Could you walk me through an example from your recent project experience?",
+      starBreakdown: {
+        situation: "Not provided",
+        task: "Not provided",
+        action: "Not provided",
+        result: "Not provided",
+      },
+    };
+  }
+
+  const prompt = `You are an elite Senior Interviewer at ${comp} evaluating a candidate's answer for a ${title} position.
+Candidate's response:
+"${answer}"
+
+Evaluate the answer strictly based on the STAR method (Situation, Task, Action, Result) and technical clarity.
+Return a strict JSON object:
+{
+  "score": <number 0-100>,
+  "starBreakdown": {
+    "situation": "Evaluation of context/situation set by candidate",
+    "task": "Evaluation of the objective defined",
+    "action": "Evaluation of technical actions and implementation details",
+    "result": "Evaluation of quantifiable outcomes and metrics"
+  },
+  "strengths": ["Strength 1", "Strength 2"],
+  "improvements": ["Constructive tip 1", "Constructive tip 2"],
+  "feedback": "2-3 sentences of overall coaching and recruiter feedback",
+  "followupQuestion": "The next realistic technical or behavioral follow-up question to probe deeper"
+}`;
+
+  try {
+    const raw = await complete(prompt, { maxTokens: 1000 });
+    if (raw) {
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    }
+  } catch (e) {}
+
+  // Deterministic STAR Evaluation Fallback
+  const wordCount = answer.split(/\s+/).length;
+  const hasNumbers = /\d+%|\d+x|\d+\s*(ms|seconds|users|requests|percent)/i.test(answer);
+  const hasTechTerms = /(react|node|api|sql|database|architecture|cache|test|git|docker|async|queue)/i.test(answer);
+
+  let score = 70;
+  if (wordCount > 50) score += 10;
+  if (hasNumbers) score += 10;
+  if (hasTechTerms) score += 8;
+  score = Math.min(score, 96);
+
+  return {
+    score,
+    starBreakdown: {
+      situation: wordCount > 20 ? "Good contextual background provided." : "Context could be set more clearly.",
+      task: "Core engineering task and objective identified.",
+      action: hasTechTerms ? "Strong technical implementation verbs and technologies cited." : "Could detail specific tools and engineering decisions.",
+      result: hasNumbers ? "Excellent quantifiable impact and metrics included!" : "Add measurable metrics (e.g. % latency decrease, user adoption).",
+    },
+    strengths: [
+      "Structured communication and direct answer to the prompt.",
+      hasTechTerms ? "Relevant technical terminology used accurately." : "Clear explanation of personal contribution.",
+    ],
+    improvements: [
+      hasNumbers ? "Maintain this level of quantitative precision." : "Quantify your impact with concrete metrics (latency, payload size, team time saved).",
+      "Mention testing strategies and how you verified backward compatibility.",
+    ],
+    feedback: `Strong answer overall (Score: ${score}/100). You demonstrated clear technical intuition and problem-solving capability. For higher impact, explicitly frame the business outcome.`,
+    followupQuestion: `How did you monitor this system post-deployment to ensure no performance degradation or edge-case regressions occurred?`,
+  };
+}
+
+// --------------------------------------------------------------------------
+// Step 8: Career Intelligence & Upskill Gap Aggregator
+// --------------------------------------------------------------------------
+export function aggregateUpskillGaps({ jobs = [], profile }) {
+  const profileSkills = new Set(
+    (profile?.structured?.skills?.technical || profile?.structured?.skills?.hard || [])
+      .map((s) => s.toLowerCase().trim())
+  );
+
+  const skillFrequency = {};
+  const skillDetails = {
+    "next.js": { track: "Frontend Architecture", priority: 92, time: "1-2 weeks", roadmap: "App router, Server Components, Streaming SSR, Server Actions", link: "https://nextjs.org/docs" },
+    "docker": { track: "Cloud & DevOps", priority: 88, time: "1 week", roadmap: "Multi-stage builds, Container networks, Compose orchestration", link: "https://docs.docker.com" },
+    "typescript": { track: "Core Languages", priority: 95, time: "1 week", roadmap: "Generics, Utility types, Type narrowing, Discriminated unions", link: "https://www.typescriptlang.org" },
+    "postgresql": { track: "Database Systems", priority: 85, time: "1-2 weeks", roadmap: "Indexing strategies, EXPLAIN ANALYZE, Connection pooling, ACID constraints", link: "https://www.postgresql.org/docs" },
+    "redis": { track: "Distributed Systems", priority: 80, time: "1 week", roadmap: "In-memory caching patterns, Pub/Sub, Rate limiters, Session store", link: "https://redis.io/docs" },
+    "graphql": { track: "API Systems", priority: 75, time: "1 week", roadmap: "Schema definition, Resolvers, DataLoader N+1 prevention, Subscriptions", link: "https://graphql.org" },
+    "kubernetes": { track: "Cloud & DevOps", priority: 72, time: "2-3 weeks", roadmap: "Pods, Deployments, Ingress controllers, Helm charts", link: "https://kubernetes.io/docs" },
+    "tailwind css": { track: "Frontend Architecture", priority: 89, time: "3 days", roadmap: "Utility-first design tokens, Flex/Grid layouts, Dark mode styling", link: "https://tailwindcss.com" },
+    "mongodb": { track: "Database Systems", priority: 70, time: "1 week", roadmap: "Aggregation pipelines, Indexing, Replica sets, Sharding", link: "https://www.mongodb.com/docs" },
+    "aws": { track: "Cloud & DevOps", priority: 86, time: "2 weeks", roadmap: "S3, Lambda serverless, EC2, CloudFront CDN, IAM security", link: "https://aws.amazon.com" },
+    "ci/cd": { track: "Cloud & DevOps", priority: 82, time: "4 days", roadmap: "GitHub Actions workflows, Automated test gates, Deployment staging", link: "https://docs.github.com/actions" },
+    "testing": { track: "Quality Engineering", priority: 90, time: "1 week", roadmap: "Jest / Vitest unit tests, Playwright E2E, Test pyramid", link: "https://vitest.dev" },
+  };
+
+  jobs.forEach((job) => {
+    const text = `${job.title} ${job.description || ""}`.toLowerCase();
+    Object.keys(skillDetails).forEach((tech) => {
+      if (text.includes(tech)) {
+        skillFrequency[tech] = (skillFrequency[tech] || 0) + 1;
+      }
+    });
+  });
+
+  const totalJobs = Math.max(jobs.length, 1);
+  const items = Object.entries(skillDetails).map(([tech, info]) => {
+    const count = skillFrequency[tech] || 0;
+    const freqPct = Math.min(Math.round((count / totalJobs) * 100), 100);
+    const candidateHasSkill = profileSkills.has(tech);
+
+    return {
+      skill: tech.charAt(0).toUpperCase() + tech.slice(1),
+      key: tech,
+      track: info.track,
+      demandScore: info.priority,
+      frequency: `${count > 0 ? `${freqPct}% (${count} jobs)` : 'Standard Market Requirement'}`,
+      roadmap: info.roadmap,
+      time: info.time,
+      link: info.link,
+      mastered: candidateHasSkill,
+    };
+  });
+
+  // Sort by priority and market demand
+  items.sort((a, b) => {
+    if (a.mastered !== b.mastered) return a.mastered ? 1 : -1;
+    return b.demandScore - a.demandScore;
+  });
+
+  return {
+    totalTrackedJobs: jobs.length,
+    skills: items,
+    masteredCount: items.filter((i) => i.mastered).length,
+    targetCount: items.filter((i) => !i.mastered).length,
+  };
+}
+
 
