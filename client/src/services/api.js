@@ -130,6 +130,14 @@ export const api = {
       body: JSON.stringify({ skill }),
     }),
 
+  // Settings & Configuration
+  getSettings: () => request('/api/settings'),
+  saveSettings: (settings) =>
+    request('/api/settings', {
+      method: 'POST',
+      body: JSON.stringify(settings),
+    }),
+
   // Hunter & Automation
   getHunterStatus: () => request('/api/hunter/status'),
   runHunter: (config) => request('/api/hunter/run', { method: 'POST', body: JSON.stringify(config || {}) }),

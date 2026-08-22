@@ -6,9 +6,11 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js",
+    "dev:server": "node --watch server.js",
     "dev:client": "npm --prefix client run dev",
-    "build:client": "npm --prefix client run build"
+    "dev": "concurrently -n \"server,client\" -c \"cyan,magenta\" \"node --watch server.js\" \"npm --prefix client run dev\"",
+    "build:client": "npm --prefix client run build",
+    "build": "npm --prefix client run build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.27.3",
@@ -21,5 +23,8 @@
     "node-fetch": "^3.3.2",
     "pdf-parse": "^2.4.5",
     "puppeteer": "^25.7.0"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
   }
 }

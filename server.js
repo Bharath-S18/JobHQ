@@ -901,21 +901,45 @@ app.get("/api/settings", (req, res) => {
   res.json({
     employmentType: dbSettings.employmentType || "internship",
     targetLocation: dbSettings.targetLocation || "Bengaluru",
-    geminiKeyConfigured: Boolean(process.env.GEMINI_API_KEY),
-    anthropicKeyConfigured: Boolean(process.env.ANTHROPIC_API_KEY),
-    provider: process.env.TAILOR_PROVIDER || (process.env.GEMINI_API_KEY ? "gemini" : "local-verified"),
+    geminiKeyConfigured: Boolean(process.env.GEMINI_API_KEY || dbSettings.geminiKey),
+    anthropicKeyConfigured: Boolean(process.env.ANTHROPIC_API_KEY || dbSettings.anthropicKey),
+    provider: process.env.TAILOR_PROVIDER || dbSettings.tailorProvider || (process.env.GEMINI_API_KEY ? "gemini" : "local-verified"),
   });
 });
 
 app.post("/api/settings", (req, res) => {
   try {
-    const { employmentType, targetLocation } = req.body;
+    const { employmentType, targetLocation, provider, geminiKey, anthropicKey } = req.body;
     if (employmentType) saveSetting("employmentType", employmentType);
     if (targetLocation) saveSetting("targetLocation", targetLocation);
+    if (provider) {
+      process.env.TAILOR_PROVIDER = provider;
+      saveSetting("tailorProvider", provider);
+    }
+    if (geminiKey) {
+      process.env.GEMINI_API_KEY = geminiKey;
+      saveSetting("geminiKey", geminiKey);
+    }
+    if (anthropicKey) {
+      process.env.ANTHROPIC_API_KEY = anthropicKey;
+      saveSetting("anthropicKey", anthropicKey);
+    }
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// SPA client fallback for non-API route reloads
+app.get("*", (req, res, next) => {
+  if (req.path.startsWith("/api") || req.path.startsWith("/auth")) {
+    return next();
+  }
+  const indexPath = path.resolve("./client/dist/index.html");
+  if (fs.existsSync(indexPath)) {
+    return res.sendFile(indexPath);
+  }
+  res.sendFile(path.resolve("./public/index.html"));
 });
 
 process.on("unhandledRejection", (reason) => {
