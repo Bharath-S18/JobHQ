@@ -51,12 +51,19 @@ import {
 
 const app = express();
 app.use(express.json());
-app.use(express.static("public"));
+
+const clientDistPath = path.resolve("./client/dist");
+if (fs.existsSync(clientDistPath)) {
+  app.use(express.static(clientDistPath));
+} else {
+  app.use(express.static("public"));
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
 });
+
 
 // ---------- Master Profile & Resume Parsing ----------
 
