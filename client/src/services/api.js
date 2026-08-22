@@ -81,6 +81,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ url }),
     }),
+  scoutPortals: (params) =>
+    request('/api/scrapers/run', {
+      method: 'POST',
+      body: JSON.stringify(params || {}),
+    }),
   rankJob: (id) => request(`/api/jobs/${id}/rank`, { method: 'POST' }),
   rankAllJobs: () => request('/api/jobs/rank-all', { method: 'POST' }),
   deleteJob: (id) => request(`/api/jobs/${id}`, { method: 'DELETE' }),

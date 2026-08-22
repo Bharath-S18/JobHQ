@@ -15,9 +15,18 @@ import {
   Globe,
   Link,
   ArrowRight,
-  Gauge
+  Gauge,
+  Compass,
+  MapPin
 } from 'lucide-react';
 import { api } from '../services/api';
+
+const AVAILABLE_PORTALS = [
+  { id: 'linkedin', name: 'LinkedIn Jobs', badge: 'Live Guest Search', color: 'text-blue-400 border-blue-500/30 bg-blue-500/10' },
+  { id: 'indeed', name: 'Indeed', badge: 'RSS & XML', color: 'text-indigo-400 border-indigo-500/30 bg-indigo-500/10' },
+  { id: 'naukri', name: 'Naukri.com', badge: 'Catalog Feed', color: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10' },
+  { id: 'wellfound', name: 'Wellfound (AngelList)', badge: 'Startup Roles', color: 'text-purple-400 border-purple-500/30 bg-purple-500/10' },
+];
 
 export default function HunterView({
   jobs = [],
@@ -27,27 +36,55 @@ export default function HunterView({
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
-  const [hunting, setHunting] = useState(false);
-  const [sampleLoading, setSampleLoading] = useState(false);
   const [directUrl, setDirectUrl] = useState('');
   const [scrapingUrl, setScrapingUrl] = useState(false);
   const [rankingAll, setRankingAll] = useState(false);
+  const [sampleLoading, setSampleLoading] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
-  const filteredJobs = jobs.filter((job) => {
-    const matchesSearch =
-      (job.title && job.title.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (job.company && job.company.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (job.description && job.description.toLowerCase().includes(searchTerm.toLowerCase()));
+  // Multi-Portal Scout Form State
+  const [scoutQuery, setScoutQuery] = useState('Full Stack Engineer');
+  const [scoutLocation, setScoutLocation] = useState('Bengaluru');
+  const [selectedPortals, setSelectedPortals] = useState(['linkedin', 'indeed', 'naukri', 'wellfound']);
+  const [scoutingPortals, setScoutingPortals] = useState(false);
+  const [lastScoutResult, setLastScoutResult] = useState(null);
 
-    const matchesSource =
-      sourceFilter === 'all' ||
-      (sourceFilter === 'greenhouse' && job.ats === 'greenhouse') ||
-      (sourceFilter === 'lever' && job.ats === 'lever') ||
-      (sourceFilter === 'linkedin' && (job.url?.includes('linkedin') || !job.ats));
+  const togglePortal = (portalId) => {
+    if (selectedPortals.includes(portalId)) {
+      if (selectedPortals.length > 1) {
+        setSelectedPortals(selectedPortals.filter((p) => p !== portalId));
+      }
+    } else {
+      setSelectedPortals([...selectedPortals, portalId]);
+    }
+  };
 
-    return matchesSearch && matchesSource;
-  });
+  const handleRunPortalScout = async (e) => {
+    e.preventDefault();
+    if (!scoutQuery.trim()) return;
+
+    setScoutingPortals(true);
+    setFeedback(null);
+    try {
+      const res = await api.scoutPortals({
+        portals: selectedPortals,
+        query: scoutQuery.trim(),
+        location: scoutLocation.trim(),
+        limit: 8,
+      });
+
+      setLastScoutResult(res);
+      setFeedback({
+        type: 'success',
+        text: `Scout complete! Discovered ${res.totalDiscovered} positions (${res.newInserted} new) across ${selectedPortals.length} portals with 5D fit evaluated.`,
+      });
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      setFeedback({ type: 'error', text: err.message || 'Scout failed' });
+    } finally {
+      setScoutingPortals(false);
+    }
+  };
 
   const handleScrapeDirectUrl = async (e) => {
     e.preventDefault();
@@ -87,20 +124,6 @@ export default function HunterView({
     }
   };
 
-  const handleRunScout = async () => {
-    setHunting(true);
-    try {
-      await api.runHunter();
-      setTimeout(async () => {
-        setHunting(false);
-        if (onRefresh) onRefresh();
-      }, 2500);
-    } catch (err) {
-      setHunting(false);
-      alert('Hunter Scout error: ' + err.message);
-    }
-  };
-
   const handleLoadSamples = async () => {
     setSampleLoading(true);
     try {
@@ -123,18 +146,36 @@ export default function HunterView({
     }
   };
 
+  const filteredJobs = jobs.filter((job) => {
+    const matchesSearch =
+      (job.title && job.title.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (job.company && job.company.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (job.description && job.description.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    const matchesSource =
+      sourceFilter === 'all' ||
+      (sourceFilter === 'linkedin' && (job.source === 'linkedin' || job.url?.includes('linkedin'))) ||
+      (sourceFilter === 'indeed' && (job.source === 'indeed' || job.ats === 'indeed')) ||
+      (sourceFilter === 'naukri' && (job.source === 'naukri' || job.ats === 'naukri')) ||
+      (sourceFilter === 'wellfound' && (job.source === 'wellfound' || job.ats === 'wellfound')) ||
+      (sourceFilter === 'greenhouse' && job.ats === 'greenhouse') ||
+      (sourceFilter === 'lever' && job.ats === 'lever');
+
+    return matchesSearch && matchesSource;
+  });
+
   return (
     <div className="space-y-6 animate-fadeIn">
       
-      {/* Header */}
+      {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-bold text-white">Multi-Source Hunter</h1>
-            <span className="rounded bg-indigo-500/20 text-indigo-300 px-2 py-0.5 text-xs font-mono">/scrape</span>
+            <span className="rounded bg-indigo-500/20 text-indigo-300 px-2 py-0.5 text-xs font-mono">/scrape & skills</span>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Scout live postings across Greenhouse, Lever, LinkedIn alerts, or import any arbitrary posting URL.
+            Autonomous multi-portal scout across LinkedIn, Indeed, Naukri, Wellfound, and direct URL parsers.
           </p>
         </div>
 
@@ -154,7 +195,7 @@ export default function HunterView({
             className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800/80 px-3.5 py-2 text-xs font-medium text-slate-300 hover:bg-slate-700 transition"
           >
             <Layers className="h-3.5 w-3.5" />
-            <span>{sampleLoading ? 'Loading...' : 'Load Verified Samples'}</span>
+            <span>{sampleLoading ? 'Loading...' : 'Load Samples'}</span>
           </button>
 
           <button
@@ -164,20 +205,109 @@ export default function HunterView({
             <Plus className="h-3.5 w-3.5" />
             <span>Add Manual</span>
           </button>
-
-          <button
-            onClick={handleRunScout}
-            disabled={hunting}
-            className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-indigo-600/30 hover:bg-indigo-500 transition disabled:opacity-50"
-          >
-            <Play className={`h-3.5 w-3.5 ${hunting ? 'animate-spin' : ''}`} />
-            <span>{hunting ? 'Scouting Portals...' : 'Run Autonomous Scout'}</span>
-          </button>
         </div>
       </div>
 
-      {/* Direct URL Scraper Bar */}
-      <div className="glass-panel rounded-2xl p-4 border border-indigo-500/20 bg-gradient-to-r from-indigo-950/20 via-slate-900/60 to-slate-900/60">
+      {/* MULTI-PORTAL SCOUT COMMAND CENTER */}
+      <div className="glass-panel rounded-2xl p-6 border border-indigo-500/30 bg-gradient-to-br from-indigo-950/25 via-slate-900/70 to-purple-950/20 space-y-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Compass className="h-5 w-5 text-indigo-400" />
+            <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+              Multi-Portal Live Search Scouts
+            </h2>
+          </div>
+          <span className="text-[10px] font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+            Concurrent Ingestion Engine
+          </span>
+        </div>
+
+        {/* Portal Selection Chips */}
+        <div className="space-y-2">
+          <span className="text-xs font-semibold text-slate-400 block">Select Active Search Portals:</span>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {AVAILABLE_PORTALS.map((portal) => {
+              const isSelected = selectedPortals.includes(portal.id);
+              return (
+                <button
+                  type="button"
+                  key={portal.id}
+                  onClick={() => togglePortal(portal.id)}
+                  className={`p-3 rounded-xl border text-left transition flex items-center justify-between ${
+                    isSelected
+                      ? 'border-indigo-500/60 bg-indigo-600/20 text-white shadow-sm'
+                      : 'border-slate-800 bg-slate-900/50 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <div>
+                    <span className="text-xs font-bold block">{portal.name}</span>
+                    <span className="text-[10px] font-mono text-slate-400">{portal.badge}</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => {}}
+                    className="rounded text-indigo-600 focus:ring-0 h-4 w-4"
+                  />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Search Query & Location Form */}
+        <form onSubmit={handleRunPortalScout} className="grid grid-cols-1 sm:grid-cols-12 gap-3 pt-2">
+          <div className="sm:col-span-5 relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+            <input
+              type="text"
+              required
+              value={scoutQuery}
+              onChange={(e) => setScoutQuery(e.target.value)}
+              placeholder="Target role or tech keywords (e.g. React Developer, Node.js SDE)..."
+              className="w-full rounded-xl border border-slate-800 bg-slate-950/90 pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+            />
+          </div>
+
+          <div className="sm:col-span-4 relative">
+            <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+            <input
+              type="text"
+              value={scoutLocation}
+              onChange={(e) => setScoutLocation(e.target.value)}
+              placeholder="Location or Work Mode (e.g. Bengaluru, Remote)..."
+              className="w-full rounded-xl border border-slate-800 bg-slate-950/90 pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+            />
+          </div>
+
+          <div className="sm:col-span-3">
+            <button
+              type="submit"
+              disabled={scoutingPortals || !scoutQuery || selectedPortals.length === 0}
+              className="w-full h-full min-h-[38px] rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 px-4 py-2 text-xs font-semibold text-white shadow-md shadow-indigo-600/30 hover:opacity-95 transition disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              <Play className={`h-3.5 w-3.5 ${scoutingPortals ? 'animate-spin' : ''}`} />
+              <span>{scoutingPortals ? 'Scouting Selected...' : `Scout ${selectedPortals.length} Portals`}</span>
+            </button>
+          </div>
+        </form>
+
+        {/* Live Scout Telemetry Counts */}
+        {lastScoutResult?.portalCounts && (
+          <div className="flex items-center gap-4 pt-2 border-t border-slate-800/80 text-[11px] font-mono text-slate-400">
+            <span>Discovered:</span>
+            {Object.entries(lastScoutResult.portalCounts).map(([portal, count]) => (
+              <span key={portal} className="capitalize text-slate-300">
+                {portal}: <strong className="text-indigo-400">{count}</strong>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* DIRECT URL INGESTION BAR */}
+      <div className="glass-panel rounded-xl p-4 border border-slate-800 space-y-2">
+        <span className="text-xs font-semibold text-slate-400 block">Single Job URL Ingestion:</span>
         <form onSubmit={handleScrapeDirectUrl} className="flex flex-col sm:flex-row items-center gap-3">
           <div className="relative flex-1 w-full">
             <Link className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-indigo-400" />
@@ -186,16 +316,16 @@ export default function HunterView({
               required
               value={directUrl}
               onChange={(e) => setDirectUrl(e.target.value)}
-              placeholder="Paste any job posting URL (Greenhouse, Lever, LinkedIn, or direct company career page)..."
-              className="w-full rounded-xl border border-slate-800 bg-slate-950/80 pl-10 pr-4 py-2.5 text-xs text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+              placeholder="Paste job posting URL (Greenhouse, Lever, LinkedIn, or direct company career link)..."
+              className="w-full rounded-xl border border-slate-800 bg-slate-950/80 pl-10 pr-4 py-2 text-xs text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
             />
           </div>
           <button
             type="submit"
             disabled={scrapingUrl || !directUrl}
-            className="w-full sm:w-auto rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-semibold text-white hover:bg-indigo-500 transition disabled:opacity-50 shrink-0 shadow-md shadow-indigo-600/20"
+            className="w-full sm:w-auto rounded-xl bg-slate-800 border border-slate-700 hover:bg-slate-700 px-4 py-2 text-xs font-semibold text-white transition disabled:opacity-50 shrink-0"
           >
-            {scrapingUrl ? 'Scraping & Ranking...' : 'Scrape & Ingest'}
+            {scrapingUrl ? 'Scraping & Ranking...' : 'Scrape Single Link'}
           </button>
         </form>
       </div>
@@ -214,7 +344,7 @@ export default function HunterView({
         </div>
       )}
 
-      {/* Filter & Search Controls */}
+      {/* Filter & Search Bar */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="relative w-full sm:w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
@@ -227,10 +357,10 @@ export default function HunterView({
           />
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
           <Filter className="h-3.5 w-3.5 text-slate-400" />
-          <span className="text-xs text-slate-400">Portal:</span>
-          {['all', 'greenhouse', 'lever', 'linkedin'].map((source) => (
+          <span className="text-xs text-slate-400">Filter Source:</span>
+          {['all', 'linkedin', 'indeed', 'naukri', 'wellfound', 'greenhouse', 'lever'].map((source) => (
             <button
               key={source}
               onClick={() => setSourceFilter(source)}
@@ -250,7 +380,7 @@ export default function HunterView({
       {filteredJobs.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-800 p-12 text-center space-y-3">
           <p className="text-sm text-slate-400">No postings matching the selected filters.</p>
-          <p className="text-xs text-slate-500">Paste a job URL above, click "Load Verified Samples", or run the Scout.</p>
+          <p className="text-xs text-slate-500">Run the Multi-Portal Scout above, paste a job URL, or load verified samples.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -262,7 +392,7 @@ export default function HunterView({
               <div className="space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700/50">
-                    {job.ats || 'Direct'}
+                    {job.source || job.ats || 'Direct'}
                   </span>
                   {typeof job.match_score === 'number' && (
                     <span className="flex items-center gap-1 text-xs font-bold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">

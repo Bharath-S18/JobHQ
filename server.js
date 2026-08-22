@@ -16,6 +16,7 @@ import {
 import { fetchLinkedInJobAlerts } from "./src/parseLinkedInAlerts.js";
 import { enrichJob, fetchGreenhouseJob, fetchLeverJob, scrapeJobFromUrl } from "./src/jobEnrich.js";
 import { tailorApplication, scoreMatch, evaluate5DFit } from "./src/tailor.js";
+import { scoutAllPortals } from "./src/scrapers/portalManager.js";
 import {
   runHunterOnce,
   getHunterStatus,
@@ -402,6 +403,24 @@ app.post("/api/jobs", (req, res) => {
     });
     res.json({ ok: true, id: result.lastInsertRowid });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------- Multi-Portal Live Search Engine (LinkedIn, Indeed, Naukri, Wellfound) ----------
+
+app.post("/api/scrapers/run", async (req, res) => {
+  try {
+    const { portals, query, location, limit } = req.body;
+    const results = await scoutAllPortals({
+      portals: Array.isArray(portals) ? portals : ["linkedin", "indeed", "naukri", "wellfound"],
+      query: query || "Software Engineer",
+      location: location || "India",
+      limitPerPortal: limit || 10,
+    });
+    res.json(results);
+  } catch (err) {
+    console.error("[Multi-Portal Scout Error]:", err);
     res.status(500).json({ error: err.message });
   }
 });
