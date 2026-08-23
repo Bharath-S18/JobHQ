@@ -5,10 +5,20 @@ import * as cheerio from "cheerio";
  * LinkedIn Public Guest Job Scraper
  * Searches live public job postings on LinkedIn without requiring private user credentials.
  */
+function isWithin2Days(timeStr) {
+  if (!timeStr) return true;
+  const s = timeStr.toLowerCase().trim();
+  // Reject anything older than 2 days (months, years, weeks, or > 2 days)
+  if (s.includes("month") || s.includes("year") || s.includes("week")) return false;
+  const dayMatch = s.match(/(\d+)\s*day/);
+  if (dayMatch && parseInt(dayMatch[1], 10) > 2) return false;
+  return true;
+}
+
 export async function scrapeLinkedInJobs({ query = "Software Engineer", location = "India", limit = 10 } = {}) {
   try {
-    // f_TPR=r172800 limits search strictly to postings from the last 48 hours (2 days)
-    const searchUrl = `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}&f_TPR=r172800&start=0`;
+    // sortBy=DD sorts by most recent; f_TPR=r172800 limits search strictly to past 48 hours (2 days)
+    const searchUrl = `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}&sortBy=DD&f_TPR=r172800&start=0`;
 
     const res = await fetch(searchUrl, {
       headers: {
@@ -37,6 +47,11 @@ export async function scrapeLinkedInJobs({ query = "Software Engineer", location
       const link = $(el).find("a.base-card__full-link, a.job-search-card__url-link").attr("href");
       const postedAt = $(el).find("time").attr("datetime") || $(el).find("time").text().trim();
 
+      // Enforce strict 2-day limit: Reject anything older than 2 days
+      if (postedAt && !isWithin2Days(postedAt)) {
+        return;
+      }
+
       if (title && (link || company)) {
         const cleanUrl = link ? link.split("?")[0] : "";
         results.push({
@@ -47,7 +62,7 @@ export async function scrapeLinkedInJobs({ query = "Software Engineer", location
           source: "linkedin",
           ats: "linkedin",
           postedAt: postedAt || new Date().toISOString(),
-          description: `Role: ${title} at ${company || "Company"}. Location: ${jobLocation || location}. Discovered via LinkedIn Job Search.`,
+          description: `Role: ${title} at ${company || "Company"}. Location: ${jobLocation || location}. Discovered via LinkedIn Job Search. Posted: ${postedAt || 'Recently'}.`,
         });
       }
     });
