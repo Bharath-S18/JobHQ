@@ -175,6 +175,12 @@ export async function fetchLinkedInJobAlerts(authClient, { maxResults = 30 } = {
         format: "full",
       });
 
+      const internalDate = Number(msg.data.internalDate);
+      const fortyEightHoursAgo = Date.now() - (48 * 60 * 60 * 1000);
+      if (internalDate && internalDate < fortyEightHoursAgo) {
+        continue; // Strictly ignore emails older than 48 hours
+      }
+
       const headers = msg.data.payload?.headers || [];
       const fromHeader = headers.find((h) => h.name.toLowerCase() === "from")?.value || "";
       const subjectHeader = headers.find((h) => h.name.toLowerCase() === "subject")?.value || "";
