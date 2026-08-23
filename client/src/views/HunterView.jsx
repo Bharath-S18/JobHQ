@@ -182,8 +182,9 @@ export default function HunterView({
     const src = (job.source || job.ats || '').toLowerCase();
     const matchesSource =
       sourceFilter === 'all' ||
+      (sourceFilter === 'gmail_alert' && (src.includes('gmail') || src.includes('email') || src.includes('superset'))) ||
       (sourceFilter === 'linkedin' && (src.includes('linkedin') || job.url?.includes('linkedin'))) ||
-      (sourceFilter === 'indeed' && (src.includes('indeed') || job.url?.includes('indeed'))) ||
+      (sourceFilter === 'indeed' && (src.includes('indeed') || job.url?.includes('indeed') || job.url?.includes('weworkremotely'))) ||
       (sourceFilter === 'naukri' && (src.includes('naukri') || job.url?.includes('naukri'))) ||
       (sourceFilter === 'wellfound' && (src.includes('wellfound') || src.includes('angel') || job.url?.includes('wellfound'))) ||
       (sourceFilter === 'greenhouse' && (src.includes('greenhouse') || job.url?.includes('greenhouse'))) ||
@@ -194,6 +195,7 @@ export default function HunterView({
 
   const getSourceBadgeColor = (source) => {
     const s = (source || '').toLowerCase();
+    if (s.includes('gmail') || s.includes('email') || s.includes('superset')) return 'text-rose-400 bg-rose-500/10 border-rose-500/20';
     if (s.includes('linkedin')) return 'text-blue-400 bg-blue-500/10 border-blue-500/20';
     if (s.includes('indeed')) return 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20';
     if (s.includes('naukri')) return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
@@ -467,20 +469,29 @@ export default function HunterView({
           />
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+        <div className="flex items-center gap-1.5 self-start sm:self-auto flex-wrap">
           <Filter className="h-3.5 w-3.5 text-slate-400" />
-          <span className="text-xs text-slate-400">Filter Source:</span>
-          {['all', 'linkedin', 'indeed', 'naukri', 'wellfound', 'greenhouse', 'lever'].map((source) => (
+          <span className="text-xs text-slate-400 mr-1">Filter:</span>
+          {[
+            { id: 'all', label: 'All' },
+            { id: 'gmail_alert', label: 'Gmail Alerts ✉️' },
+            { id: 'linkedin', label: 'LinkedIn' },
+            { id: 'indeed', label: 'Indeed' },
+            { id: 'naukri', label: 'Naukri' },
+            { id: 'wellfound', label: 'Wellfound' },
+            { id: 'greenhouse', label: 'Greenhouse' },
+            { id: 'lever', label: 'Lever' },
+          ].map((item) => (
             <button
-              key={source}
-              onClick={() => setSourceFilter(source)}
-              className={`rounded-lg px-2.5 py-1 text-xs capitalize transition ${
-                sourceFilter === source
-                  ? 'bg-indigo-600 text-white font-medium shadow-sm'
+              key={item.id}
+              onClick={() => setSourceFilter(item.id)}
+              className={`rounded-lg px-2.5 py-1 text-xs transition ${
+                sourceFilter === item.id
+                  ? 'bg-indigo-600 text-white font-semibold shadow-sm'
                   : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
               }`}
             >
-              {source}
+              {item.label}
             </button>
           ))}
         </div>
