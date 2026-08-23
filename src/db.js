@@ -438,13 +438,15 @@ export function detectJobSource(job) {
     return job.source.toLowerCase();
   }
   const url = (job.url || job.finalUrl || "").toLowerCase();
+  if (url.includes("joinsuperset.com") || (job.company || "").toLowerCase().includes("superset")) return "superset";
+  if (job.gmailMessageId && url.includes("linkedin.com")) return "linkedin_alert";
   if (url.includes("linkedin.com")) return "linkedin";
   if (url.includes("indeed.com")) return "indeed";
   if (url.includes("naukri.com")) return "naukri";
   if (url.includes("wellfound.com") || url.includes("angel.co")) return "wellfound";
   if (url.includes("greenhouse.io")) return "greenhouse";
   if (url.includes("lever.co")) return "lever";
-  if (job.ats === "gmail_alert" || job.gmailMessageId) return "gmail_alert";
+  if (job.ats === "gmail_alert" || job.gmailMessageId) return "linkedin_alert";
   return "direct";
 }
 

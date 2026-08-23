@@ -2,7 +2,7 @@ import { google } from "googleapis";
 import * as cheerio from "cheerio";
 
 // Scans for LinkedIn job alert emails and Superset college placement/internship notifications
-const GMAIL_QUERY = 'from:(jobs-noreply@linkedin.com OR joinsuperset.com OR superset OR naukri.com OR internshala.com) newer_than:30d';
+const GMAIL_QUERY = 'from:(jobalerts-noreply@linkedin.com OR jobs-noreply@linkedin.com OR joinsuperset.com OR superset) newer_than:30d';
 
 function decodeBody(payload) {
   function walk(part) {
@@ -36,6 +36,7 @@ const JUNK_TITLE_PATTERNS = [
   /dashboard/i,
   /support/i,
   /terms\s*of\s*service/i,
+  /view\s*job/i,
 ];
 
 const JUNK_URL_PATTERNS = [
@@ -63,6 +64,7 @@ function cleanTitle(raw) {
     .replace(/^[\s\n\r]+|[\s\n\r]+$/g, "")
     .replace(/\s*·\s*(LinkedIn|Superset|Naukri).*$/i, "")
     .replace(/^apply\s*(now|to|for)?\s*:?/i, "")
+    .replace(/Easy Apply/gi, "")
     .trim();
 }
 
@@ -70,14 +72,14 @@ function parseLinkedInCard($, container) {
   const fullText = $(container).text().replace(/\s+/g, " ").trim();
   const lines = fullText.split(/[\n\r·•]/).map((l) => l.trim()).filter(Boolean);
 
-  let company = "Target Company";
+  let company = "Company on LinkedIn";
   let location = "Remote / Hybrid";
 
   if (lines.length >= 2 && lines[1].length < 60) {
-    company = lines[1];
+    company = lines[1].replace(/Easy Apply/gi, "").trim();
   }
   if (lines.length >= 3 && lines[2].length < 60) {
-    location = lines[2];
+    location = lines[2].replace(/Easy Apply/gi, "").trim();
   }
 
   return { company, location, context: fullText.slice(0, 400) };
@@ -88,7 +90,10 @@ function extractJobsFromHtml(html, senderEmail = "", subject = "") {
   const jobs = [];
   const seenUrls = new Set();
 
-  const isSuperset = senderEmail.includes("superset") || html.includes("joinsuperset.com") || subject.toLowerCase().includes("superset");
+  const isSuperset = senderEmail.toLowerCase().includes("superset") || html.toLowerCase().includes("joinsuperset.com") || subject.toLowerCase().includes("superset");
+  const isLinkedInAlert = senderEmail.toLowerCase().includes("linkedin.com") || subject.toLowerCase().includes("job alert");
+
+  const sourceTag = isSuperset ? "superset" : isLinkedInAlert ? "linkedin_alert" : "gmail_alert";
 
   // 1. Check for standard LinkedIn / Superset job links
   $('a[href*="/jobs/view/"], a[href*="redirect.linkedin.com"], a[href*="linkedin.com/comm/jobs"], a[href*="joinsuperset.com/students/jobprofiles/"]').each((_, el) => {
@@ -115,17 +120,16 @@ function extractJobsFromHtml(html, senderEmail = "", subject = "") {
     jobs.push({
       title: cleanedTitle,
       url: cleanUrl,
-      company: meta.company !== titleText ? meta.company : (isSuperset ? "Campus Partner" : "Company via Alert"),
+      company: meta.company !== titleText && meta.company !== "Company on LinkedIn" ? meta.company : (isSuperset ? "Campus Partner" : "Company via LinkedIn Alert"),
       location: meta.location,
       context: meta.context,
-      source: isSuperset ? "superset" : "gmail_alert",
+      source: sourceTag,
     });
   });
 
   // 2. Intelligent Superset Email Body / Announcement Extractor
   if (isSuperset) {
     const bodyText = $.text().replace(/\s+/g, " ");
-    // Pattern: "Job Profile: <Title> at <Company>" or "<Company>'s Job Profile: <Title>"
     const match = bodyText.match(/(?:for|at)\s+([A-Za-z0-9\s&.,-]+?)'?s?\s+Job Profile:?\s*([A-Za-z0-9\s/,-]+?)(?:\.|\n|New Deadline|Deadline|If you have)/i);
     if (match) {
       const company = match[1].trim();

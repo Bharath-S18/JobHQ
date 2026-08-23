@@ -180,29 +180,52 @@ export default function HunterView({
       (job.description && job.description.toLowerCase().includes(searchTerm.toLowerCase()));
 
     const src = (job.source || job.ats || '').toLowerCase();
+    const isSupersetJob = src === 'superset' || (job.url || '').includes('joinsuperset.com');
+    const isLinkedInAlertJob = src === 'linkedin_alert' || (src.includes('gmail') && (job.url || '').includes('linkedin.com'));
+
     const matchesSource =
       sourceFilter === 'all' ||
-      (sourceFilter === 'gmail_alert' && (src.includes('gmail') || src.includes('email') || src.includes('superset'))) ||
-      (sourceFilter === 'linkedin' && (src.includes('linkedin') || job.url?.includes('linkedin'))) ||
-      (sourceFilter === 'indeed' && (src.includes('indeed') || job.url?.includes('indeed') || job.url?.includes('weworkremotely'))) ||
-      (sourceFilter === 'naukri' && (src.includes('naukri') || job.url?.includes('naukri'))) ||
-      (sourceFilter === 'wellfound' && (src.includes('wellfound') || src.includes('angel') || job.url?.includes('wellfound'))) ||
-      (sourceFilter === 'greenhouse' && (src.includes('greenhouse') || job.url?.includes('greenhouse'))) ||
-      (sourceFilter === 'lever' && (src.includes('lever') || job.url?.includes('lever')));
+      (sourceFilter === 'superset' && isSupersetJob) ||
+      (sourceFilter === 'linkedin_alert' && isLinkedInAlertJob) ||
+      (sourceFilter === 'linkedin' && !isLinkedInAlertJob && (src === 'linkedin' || (job.url || '').includes('linkedin.com'))) ||
+      (sourceFilter === 'indeed' && (src.includes('indeed') || (job.url || '').includes('indeed') || (job.url || '').includes('weworkremotely'))) ||
+      (sourceFilter === 'naukri' && (src.includes('naukri') || (job.url || '').includes('naukri'))) ||
+      (sourceFilter === 'wellfound' && (src.includes('wellfound') || src.includes('angel') || (job.url || '').includes('wellfound'))) ||
+      (sourceFilter === 'greenhouse' && (src.includes('greenhouse') || (job.url || '').includes('greenhouse'))) ||
+      (sourceFilter === 'lever' && (src.includes('lever') || (job.url || '').includes('lever')));
 
     return matchesSearch && matchesSource;
   });
 
-  const getSourceBadgeColor = (source) => {
-    const s = (source || '').toLowerCase();
-    if (s.includes('gmail') || s.includes('email') || s.includes('superset')) return 'text-rose-400 bg-rose-500/10 border-rose-500/20';
-    if (s.includes('linkedin')) return 'text-blue-400 bg-blue-500/10 border-blue-500/20';
-    if (s.includes('indeed')) return 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20';
-    if (s.includes('naukri')) return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
-    if (s.includes('wellfound') || s.includes('angel')) return 'text-purple-400 bg-purple-500/10 border-purple-500/20';
-    if (s.includes('greenhouse')) return 'text-teal-400 bg-teal-500/10 border-teal-500/20';
-    if (s.includes('lever')) return 'text-amber-400 bg-amber-500/10 border-amber-500/20';
-    return 'text-slate-400 bg-slate-800 border-slate-700';
+  const getSourceBadgeInfo = (job) => {
+    const s = (job.source || job.ats || '').toLowerCase();
+    const u = (job.url || '').toLowerCase();
+
+    if (s === 'superset' || u.includes('joinsuperset.com')) {
+      return { label: '🎓 Campus (Superset)', cls: 'text-amber-400 bg-amber-500/10 border-amber-500/30' };
+    }
+    if (s === 'linkedin_alert' || (s.includes('gmail') && u.includes('linkedin.com'))) {
+      return { label: '📬 LinkedIn Alert', cls: 'text-rose-400 bg-rose-500/10 border-rose-500/30 font-semibold' };
+    }
+    if (s === 'linkedin' || u.includes('linkedin.com')) {
+      return { label: '🌐 LinkedIn Guest', cls: 'text-blue-400 bg-blue-500/10 border-blue-500/20' };
+    }
+    if (s.includes('indeed') || u.includes('indeed') || u.includes('weworkremotely')) {
+      return { label: 'Indeed', cls: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20' };
+    }
+    if (s.includes('naukri') || u.includes('naukri')) {
+      return { label: 'Naukri', cls: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' };
+    }
+    if (s.includes('wellfound') || s.includes('angel') || u.includes('wellfound')) {
+      return { label: 'Wellfound', cls: 'text-purple-400 bg-purple-500/10 border-purple-500/20' };
+    }
+    if (s.includes('greenhouse') || u.includes('greenhouse')) {
+      return { label: 'Greenhouse', cls: 'text-teal-400 bg-teal-500/10 border-teal-500/20' };
+    }
+    if (s.includes('lever') || u.includes('lever')) {
+      return { label: 'Lever', cls: 'text-amber-400 bg-amber-500/10 border-amber-500/20' };
+    }
+    return { label: 'Direct Scraped', cls: 'text-slate-400 bg-slate-800 border-slate-700' };
   };
 
   const getStatusBadge = (status) => {
@@ -394,9 +417,14 @@ export default function HunterView({
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 font-semibold uppercase">
                     Scraped Just Now
                   </span>
-                  <span className={`text-[10px] font-mono px-2 py-0.5 rounded border uppercase ${getSourceBadgeColor(latestScrapedJob.source)}`}>
-                    {latestScrapedJob.source || 'Direct'}
-                  </span>
+                  {(() => {
+                    const b = getSourceBadgeInfo(latestScrapedJob);
+                    return (
+                      <span className={`text-[10px] font-mono px-2 py-0.5 rounded border ${b.cls}`}>
+                        {b.label}
+                      </span>
+                    );
+                  })()}
                   {typeof latestScrapedJob.match_score === 'number' && (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 flex items-center gap-1">
                       <Sparkles className="h-2.5 w-2.5" />
@@ -474,8 +502,9 @@ export default function HunterView({
           <span className="text-xs text-slate-400 mr-1">Filter:</span>
           {[
             { id: 'all', label: 'All' },
-            { id: 'gmail_alert', label: 'Gmail Alerts ✉️' },
-            { id: 'linkedin', label: 'LinkedIn' },
+            { id: 'superset', label: '🎓 Campus (Superset)' },
+            { id: 'linkedin_alert', label: '📬 LinkedIn Alerts' },
+            { id: 'linkedin', label: '🌐 Public LinkedIn' },
             { id: 'indeed', label: 'Indeed' },
             { id: 'naukri', label: 'Naukri' },
             { id: 'wellfound', label: 'Wellfound' },
@@ -507,6 +536,7 @@ export default function HunterView({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredJobs.map((job) => {
             const statusInfo = getStatusBadge(job.status || job.app_status);
+            const sourceBadge = getSourceBadgeInfo(job);
             return (
               <div
                 key={job.id}
@@ -514,9 +544,9 @@ export default function HunterView({
               >
                 <div className="space-y-2">
                   <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-1.5">
-                      <span className={`text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded border ${getSourceBadgeColor(job.source)}`}>
-                        {job.source || job.ats || 'Direct'}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded border ${sourceBadge.cls}`}>
+                        {sourceBadge.label}
                       </span>
                       <span className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded border font-semibold ${statusInfo.cls}`}>
                         {statusInfo.label}
