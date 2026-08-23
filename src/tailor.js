@@ -1,3 +1,5 @@
+import dotenv from "dotenv";
+dotenv.config({ override: true });
 import Anthropic from "@anthropic-ai/sdk";
 import fetch from "node-fetch";
 import { ollamaGenerate } from "./ollama.js";
@@ -27,30 +29,47 @@ function getActiveProvider() {
 }
 
 async function callGemini(prompt, apiKey) {
-  const model = process.env.GEMINI_MODEL || "gemini-1.5-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const modelsToTry = [
+    process.env.GEMINI_MODEL,
+    "gemini-3.6-flash",
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+  ].filter(Boolean);
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: 1500,
-      },
-    }),
-  });
+  let lastError = null;
 
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Gemini API error (${res.status}): ${errText}`);
+  for (const model of modelsToTry) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 1500,
+          },
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) return text;
+      } else {
+        const errText = await res.text();
+        lastError = new Error(`Gemini API error (${res.status}): ${errText}`);
+      }
+    } catch (e) {
+      lastError = e;
+    }
   }
 
-  const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("No text response from Gemini");
-  return text;
+  throw lastError || new Error("Failed to generate response from Gemini");
 }
 
 async function callAnthropic(prompt, apiKey) {
@@ -63,7 +82,7 @@ async function callAnthropic(prompt, apiKey) {
   return response.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
 }
 
-async function complete(prompt, { maxTokens = 1500 } = {}) {
+export async function complete(prompt, { maxTokens = 1500 } = {}) {
   const provider = getActiveProvider();
 
   try {
