@@ -497,6 +497,12 @@ export function upsertJob(job) {
       @source, @sourceJobId, @gmailMessageId, @title, @company, @location, @url, @canonicalUrl, @finalUrl,
       @description, @ats, @atsBoard, @atsJobId, @canAutoSubmit, @contentHash, @status, @receivedAt, datetime('now'), datetime('now'), datetime('now')
     )
+    ON CONFLICT(url) DO UPDATE SET
+      title = excluded.title,
+      company = excluded.company,
+      location = excluded.location,
+      description = excluded.description,
+      last_seen_at = datetime('now')
   `);
 
   const result = stmt.run({
@@ -519,16 +525,19 @@ export function upsertJob(job) {
     receivedAt: job.receivedAt || new Date().toISOString(),
   });
 
-  const newJobId = result.lastInsertRowid;
+  const savedJob = getJobByUrl(rawUrl);
+  const newJobId = result.lastInsertRowid || savedJob?.id;
 
-  // Initialize application record in 'NOT_APPLIED' state
-  db.prepare(`
-    INSERT INTO applications (job_id, profile_id, status, created_at, updated_at)
-    VALUES (?, 1, 'NOT_APPLIED', datetime('now'), datetime('now'))
-    ON CONFLICT(job_id) DO NOTHING
-  `).run(newJobId);
+  if (newJobId) {
+    // Initialize application record in 'NOT_APPLIED' state
+    db.prepare(`
+      INSERT INTO applications (job_id, profile_id, status, created_at, updated_at)
+      VALUES (?, 1, 'NOT_APPLIED', datetime('now'), datetime('now'))
+      ON CONFLICT(job_id) DO NOTHING
+    `).run(newJobId);
+  }
 
-  return { id: newJobId, isNew: true };
+  return { id: newJobId, isNew: result.changes > 0 };
 }
 
 // Cleans up existing duplicates from the database and fixes mislabeled source tags & statuses

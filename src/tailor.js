@@ -60,6 +60,9 @@ async function callGemini(prompt, apiKey) {
         const data = await res.json();
         const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) return text;
+      } else if (res.status === 429 || res.status === 503) {
+        console.log(`[AI Engine] Gemini free-tier rate limit reached (status ${res.status}). Seamlessly falling back to local rubric.`);
+        return null;
       } else {
         const errText = await res.text();
         lastError = new Error(`Gemini API error (${res.status}): ${errText}`);
@@ -69,7 +72,7 @@ async function callGemini(prompt, apiKey) {
     }
   }
 
-  throw lastError || new Error("Failed to generate response from Gemini");
+  return null;
 }
 
 async function callAnthropic(prompt, apiKey) {
