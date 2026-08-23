@@ -22,7 +22,9 @@ import {
   Scissors,
   Check,
   Building2,
-  AlertCircle
+  AlertCircle,
+  ArrowUpDown,
+  Clock
 } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -41,6 +43,7 @@ export default function HunterView({
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('newest'); // 'newest' | 'score'
   const [directUrl, setDirectUrl] = useState('');
   const [scrapingUrl, setScrapingUrl] = useState(false);
   const [rankingAll, setRankingAll] = useState(false);
@@ -195,6 +198,16 @@ export default function HunterView({
       (sourceFilter === 'lever' && (src.includes('lever') || (job.url || '').includes('lever')));
 
     return matchesSearch && matchesSource;
+  });
+
+  const sortedJobs = [...filteredJobs].sort((a, b) => {
+    if (sortBy === 'score') {
+      return (b.match_score || 0) - (a.match_score || 0);
+    }
+    // Default: Newest first by received_at / created_at, then highest ID
+    const timeA = new Date(a.received_at || a.created_at || 0).getTime();
+    const timeB = new Date(b.received_at || b.created_at || 0).getTime();
+    return timeB - timeA || b.id - a.id;
   });
 
   const getSourceBadgeInfo = (job) => {
@@ -484,20 +497,34 @@ export default function HunterView({
         </div>
       )}
 
-      {/* Filter & Search Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="relative w-full sm:w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by title, company, keyword..."
-            className="w-full rounded-xl border border-slate-800 bg-slate-900/80 pl-9 pr-4 py-2 text-xs text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
-          />
+      {/* Filter, Sort & Search Bar */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex items-center gap-3 w-full lg:w-auto">
+          <div className="relative flex-1 sm:w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search by title, company, keyword..."
+              className="w-full rounded-xl border border-slate-800 bg-slate-900/80 pl-9 pr-4 py-2 text-xs text-white placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            <ArrowUpDown className="h-3.5 w-3.5 text-indigo-400" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-200 focus:border-indigo-500 focus:outline-none cursor-pointer"
+            >
+              <option value="newest">🕒 Latest First</option>
+              <option value="score">✨ Highest Fit %</option>
+            </select>
+          </div>
         </div>
 
-        <div className="flex items-center gap-1.5 self-start sm:self-auto flex-wrap">
+        <div className="flex items-center gap-1.5 self-start lg:self-auto flex-wrap">
           <Filter className="h-3.5 w-3.5 text-slate-400" />
           <span className="text-xs text-slate-400 mr-1">Filter:</span>
           {[
@@ -527,14 +554,14 @@ export default function HunterView({
       </div>
 
       {/* Jobs Grid */}
-      {filteredJobs.length === 0 ? (
+      {sortedJobs.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-slate-800 p-12 text-center space-y-3">
           <p className="text-sm text-slate-400">No postings matching the selected filters.</p>
           <p className="text-xs text-slate-500">Run the Multi-Portal Scout above, paste a job URL, or load verified samples.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredJobs.map((job) => {
+          {sortedJobs.map((job) => {
             const statusInfo = getStatusBadge(job.status || job.app_status);
             const sourceBadge = getSourceBadgeInfo(job);
             return (

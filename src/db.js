@@ -649,7 +649,7 @@ export function listJobs({ status, source } = {}) {
     query += ` WHERE ${where.join(" AND ")}`;
   }
 
-  query += ` ORDER BY match_score DESC, j.created_at DESC`;
+  query += ` ORDER BY COALESCE(j.received_at, j.created_at) DESC, j.id DESC`;
   return db.prepare(query).all(...params);
 }
 
