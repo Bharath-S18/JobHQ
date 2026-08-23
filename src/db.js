@@ -406,45 +406,170 @@ export function upsertNormalizedJob(job) {
   return { id: newJobId, isNew: true };
 }
 
-// Legacy upsertJob wrapper for existing alert scanner
+export function canonicalizeUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== "string") return "";
+  try {
+    const parsed = new URL(rawUrl);
+    // Remove common tracking parameters
+    parsed.searchParams.delete("ref");
+    parsed.searchParams.delete("trk");
+    parsed.searchParams.delete("trkCode");
+    parsed.searchParams.delete("trackingId");
+    parsed.searchParams.delete("utm_source");
+    parsed.searchParams.delete("utm_medium");
+    parsed.searchParams.delete("utm_campaign");
+    parsed.searchParams.delete("utm_term");
+    parsed.searchParams.delete("utm_content");
+    parsed.searchParams.delete("from");
+    parsed.searchParams.delete("vjs");
+    parsed.searchParams.delete("tk");
+    let clean = parsed.origin + parsed.pathname;
+    if (parsed.searchParams.toString()) {
+      clean += "?" + parsed.searchParams.toString();
+    }
+    return clean.replace(/\/+$/, "");
+  } catch (e) {
+    return rawUrl.split("?")[0].replace(/\/+$/, "");
+  }
+}
+
+export function detectJobSource(job) {
+  if (job.source && !["unknown", "undefined"].includes(job.source)) {
+    return job.source.toLowerCase();
+  }
+  const url = (job.url || job.finalUrl || "").toLowerCase();
+  if (url.includes("linkedin.com")) return "linkedin";
+  if (url.includes("indeed.com")) return "indeed";
+  if (url.includes("naukri.com")) return "naukri";
+  if (url.includes("wellfound.com") || url.includes("angel.co")) return "wellfound";
+  if (url.includes("greenhouse.io")) return "greenhouse";
+  if (url.includes("lever.co")) return "lever";
+  if (job.ats === "gmail_alert" || job.gmailMessageId) return "gmail_alert";
+  return "direct";
+}
+
+// Unified robust upsertJob with multi-tier deduplication & canonical URL matching
 export function upsertJob(job) {
+  if (!job || !job.title) return null;
+
+  const source = detectJobSource(job);
+  const rawUrl = job.url || job.finalUrl || "";
+  const canonicalUrl = canonicalizeUrl(rawUrl);
   const hash = computeContentHash(job.title, job.company, job.description);
+
+  // Check if job already exists by URL, canonical URL, or Content Hash
+  const existing = findExistingJob({
+    source,
+    sourceJobId: job.atsJobId || job.sourceJobId,
+    url: rawUrl,
+    canonicalUrl,
+    contentHash: hash,
+  });
+
+  if (existing) {
+    db.prepare(`
+      UPDATE jobs SET
+        source = COALESCE(?, source),
+        title = COALESCE(?, title),
+        company = COALESCE(?, company),
+        location = COALESCE(?, location),
+        description = COALESCE(?, description),
+        final_url = COALESCE(?, final_url),
+        last_seen_at = datetime('now')
+      WHERE id = ?
+    `).run(
+      source,
+      job.title,
+      job.company || null,
+      job.location || null,
+      job.description || null,
+      job.finalUrl || null,
+      existing.id
+    );
+    return { id: existing.id, isNew: false };
+  }
+
   const stmt = db.prepare(`
     INSERT INTO jobs (
-      source, source_job_id, gmail_message_id, title, company, url, final_url,
-      description, ats, ats_board, ats_job_id, can_auto_submit, content_hash, received_at, last_seen_at
+      source, source_job_id, gmail_message_id, title, company, location, url, canonical_url, final_url,
+      description, ats, ats_board, ats_job_id, can_auto_submit, content_hash, status, received_at, last_seen_at, created_at, updated_at
     ) VALUES (
-      @source, @sourceJobId, @gmailMessageId, @title, @company, @url, @finalUrl,
-      @description, @ats, @atsBoard, @atsJobId, @canAutoSubmit, @contentHash, @receivedAt, datetime('now')
+      @source, @sourceJobId, @gmailMessageId, @title, @company, @location, @url, @canonicalUrl, @finalUrl,
+      @description, @ats, @atsBoard, @atsJobId, @canAutoSubmit, @contentHash, @status, @receivedAt, datetime('now'), datetime('now'), datetime('now')
     )
-    ON CONFLICT(url) DO UPDATE SET
-      title = excluded.title, company = excluded.company, description = excluded.description, last_seen_at = datetime('now')
   `);
 
-  stmt.run({
-    source: job.ats === "linkedin_post" ? "linkedin" : "gmail_alert",
-    sourceJobId: job.atsJobId || null,
+  const result = stmt.run({
+    source,
+    sourceJobId: job.atsJobId || job.sourceJobId || null,
     gmailMessageId: job.gmailMessageId || null,
     title: job.title,
     company: job.company || "Unknown Company",
-    url: job.url,
-    finalUrl: job.finalUrl || null,
+    location: job.location || "Remote / Onsite",
+    url: rawUrl,
+    canonicalUrl,
+    finalUrl: job.finalUrl || rawUrl,
     description: job.description || null,
-    ats: job.ats || "unknown",
+    ats: job.ats || source,
     atsBoard: job.atsBoard || null,
     atsJobId: job.atsJobId || null,
     canAutoSubmit: job.canAutoSubmit ? 1 : 0,
     contentHash: hash,
+    status: job.status || "new",
     receivedAt: job.receivedAt || new Date().toISOString(),
   });
 
-  const saved = getJobByUrl(job.url);
-  if (saved) {
-    db.prepare(`
-      INSERT INTO applications (job_id, profile_id, status, created_at, updated_at)
-      VALUES (?, 1, 'NOT_APPLIED', datetime('now'), datetime('now'))
-      ON CONFLICT(job_id) DO NOTHING
-    `).run(saved.id);
+  const newJobId = result.lastInsertRowid;
+
+  // Initialize application record in 'NOT_APPLIED' state
+  db.prepare(`
+    INSERT INTO applications (job_id, profile_id, status, created_at, updated_at)
+    VALUES (?, 1, 'NOT_APPLIED', datetime('now'), datetime('now'))
+    ON CONFLICT(job_id) DO NOTHING
+  `).run(newJobId);
+
+  return { id: newJobId, isNew: true };
+}
+
+// Cleans up existing duplicates from the database and fixes mislabeled source tags
+export function cleanupDuplicateJobs() {
+  try {
+    const allJobs = db.prepare(`SELECT * FROM jobs ORDER BY id ASC`).all();
+    const seenHashes = new Map();
+    const seenUrls = new Map();
+    let removedCount = 0;
+    let updatedSources = 0;
+
+    for (const job of allJobs) {
+      const canonical = canonicalizeUrl(job.url || job.canonical_url);
+      const hash = job.content_hash || computeContentHash(job.title, job.company, job.description);
+      const correctSource = detectJobSource(job);
+
+      // Fix mislabeled source if needed
+      if (correctSource !== job.source) {
+        db.prepare(`UPDATE jobs SET source = ? WHERE id = ?`).run(correctSource, job.id);
+        updatedSources++;
+      }
+
+      // Check for duplicates by canonical URL or content hash
+      const existingId = seenUrls.get(canonical) || seenHashes.get(hash);
+      if (existingId) {
+        // Remove duplicate job row and associated matches/tailoring
+        db.prepare(`DELETE FROM jobs WHERE id = ?`).run(job.id);
+        db.prepare(`DELETE FROM applications WHERE job_id = ?`).run(job.id);
+        db.prepare(`DELETE FROM job_matches WHERE job_id = ?`).run(job.id);
+        db.prepare(`DELETE FROM tailored_documents WHERE job_id = ?`).run(job.id);
+        removedCount++;
+      } else {
+        if (canonical) seenUrls.set(canonical, job.id);
+        if (hash) seenHashes.set(hash, job.id);
+      }
+    }
+
+    return { ok: true, removedCount, updatedSources, totalRemaining: allJobs.length - removedCount };
+  } catch (err) {
+    console.error("[Cleanup Duplicates Error]:", err);
+    return { ok: false, error: err.message };
   }
 }
 

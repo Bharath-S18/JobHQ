@@ -48,7 +48,16 @@ import {
   getApplicationEvents,
   getTelemetryFeed,
   getGmailAlertsList,
+  cleanupDuplicateJobs,
 } from "./src/db.js";
+
+// Run one-time database duplicate cleaner and source normalizer on startup
+try {
+  const cleanupStats = cleanupDuplicateJobs();
+  if (cleanupStats.removedCount > 0 || cleanupStats.updatedSources > 0) {
+    console.log(`[DB Cleaner] Deduplicated ${cleanupStats.removedCount} jobs, normalized ${cleanupStats.updatedSources} sources.`);
+  }
+} catch (e) {}
 
 const app = express();
 app.use(express.json());
@@ -426,6 +435,15 @@ app.post("/api/scrapers/run", async (req, res) => {
 });
 
 // ---------- Direct URL Scraper & 5D Ranking Engine ----------
+
+app.post("/api/jobs/cleanup-duplicates", (req, res) => {
+  try {
+    const result = cleanupDuplicateJobs();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.post("/api/jobs/scrape-url", async (req, res) => {
   try {

@@ -88,6 +88,7 @@ export const api = {
     }),
   rankJob: (id) => request(`/api/jobs/${id}/rank`, { method: 'POST' }),
   rankAllJobs: () => request('/api/jobs/rank-all', { method: 'POST' }),
+  cleanupDuplicates: () => request('/api/jobs/cleanup-duplicates', { method: 'POST' }),
   deleteJob: (id) => request(`/api/jobs/${id}`, { method: 'DELETE' }),
   loadSampleJobs: () => request('/api/jobs/sample', { method: 'POST' }),
   updateJobStatus: (id, status, note) => 
