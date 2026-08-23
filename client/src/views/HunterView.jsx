@@ -578,6 +578,23 @@ export default function HunterView({
                       <span className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded border font-semibold ${statusInfo.cls}`}>
                         {statusInfo.label}
                       </span>
+                      {job.deadline && (
+                        <span className="flex items-center gap-1 text-[10px] font-mono font-medium px-2 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300">
+                          <Clock className="h-2.5 w-2.5 text-amber-400" />
+                          <span>Deadline: {job.deadline}</span>
+                        </span>
+                      )}
+                      {job.is_active === 0 || job.status === 'closed' ? (
+                        <span className="flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded border border-rose-500/30 bg-rose-500/10 text-rose-300 font-semibold">
+                          <AlertCircle className="h-2.5 w-2.5" />
+                          Closed
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 font-medium">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                          Actively Hiring
+                        </span>
+                      )}
                     </div>
 
                     {typeof job.match_score === 'number' && (

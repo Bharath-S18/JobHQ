@@ -215,6 +215,8 @@ const migrations = [
   "ALTER TABLE hunter_tasks ADD COLUMN locked_at TEXT",
   "ALTER TABLE hunter_tasks ADD COLUMN worker_id TEXT",
   "ALTER TABLE raw_job_sources ADD COLUMN parsed INTEGER DEFAULT 0",
+  "ALTER TABLE jobs ADD COLUMN deadline TEXT",
+  "ALTER TABLE jobs ADD COLUMN is_active INTEGER DEFAULT 1",
 ];
 
 for (const sql of migrations) {
@@ -494,16 +496,18 @@ export function upsertJob(job) {
   const stmt = db.prepare(`
     INSERT INTO jobs (
       source, source_job_id, gmail_message_id, title, company, location, url, canonical_url, final_url,
-      description, ats, ats_board, ats_job_id, can_auto_submit, content_hash, status, received_at, last_seen_at, created_at, updated_at
+      description, ats, ats_board, ats_job_id, can_auto_submit, content_hash, status, deadline, is_active, received_at, last_seen_at, created_at, updated_at
     ) VALUES (
       @source, @sourceJobId, @gmailMessageId, @title, @company, @location, @url, @canonicalUrl, @finalUrl,
-      @description, @ats, @atsBoard, @atsJobId, @canAutoSubmit, @contentHash, @status, @receivedAt, datetime('now'), datetime('now'), datetime('now')
+      @description, @ats, @atsBoard, @atsJobId, @canAutoSubmit, @contentHash, @status, @deadline, @isActive, @receivedAt, datetime('now'), datetime('now'), datetime('now')
     )
     ON CONFLICT(url) DO UPDATE SET
       title = excluded.title,
       company = excluded.company,
       location = excluded.location,
       description = excluded.description,
+      deadline = COALESCE(excluded.deadline, jobs.deadline),
+      is_active = COALESCE(excluded.is_active, jobs.is_active),
       last_seen_at = datetime('now')
   `);
 
@@ -524,6 +528,8 @@ export function upsertJob(job) {
     canAutoSubmit: job.canAutoSubmit ? 1 : 0,
     contentHash: hash,
     status: job.status || "new",
+    deadline: job.deadline || null,
+    isActive: job.isActive !== undefined ? (job.isActive ? 1 : 0) : 1,
     receivedAt: job.receivedAt || new Date().toISOString(),
   });
 

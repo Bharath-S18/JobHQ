@@ -85,10 +85,25 @@ function parseLinkedInCard($, container) {
   return { company, location, context: fullText.slice(0, 400) };
 }
 
+function extractDeadline(text) {
+  if (!text) return null;
+  const match = text.match(/(?:new\s+deadline|deadline|apply\s+before|last\s+date\s*(?:to\s*apply)?)\s*:?\s*([A-Za-z0-9\s,:\/-]{3,35})/i);
+  if (match) {
+    let raw = match[1].trim();
+    raw = raw.replace(/\s+(?:If you have|To check|Please note|Click here|For any help).*$/i, '').trim();
+    if (raw.length >= 3 && raw.length <= 35) {
+      return raw;
+    }
+  }
+  return null;
+}
+
 function extractJobsFromHtml(html, senderEmail = "", subject = "") {
   const $ = cheerio.load(html);
   const jobs = [];
   const seenUrls = new Set();
+  const rawBodyText = $.text().replace(/\s+/g, " ").trim();
+  const emailDeadline = extractDeadline(rawBodyText || subject);
 
   const isSuperset = senderEmail.toLowerCase().includes("superset") || html.toLowerCase().includes("joinsuperset.com") || subject.toLowerCase().includes("superset");
   const isLinkedInAlert = senderEmail.toLowerCase().includes("linkedin.com") || subject.toLowerCase().includes("job alert");
@@ -116,6 +131,7 @@ function extractJobsFromHtml(html, senderEmail = "", subject = "") {
 
     const parentBox = $(el).closest("table, tr, td, div");
     const meta = parseLinkedInCard($, parentBox);
+    const cardDeadline = extractDeadline(meta.context) || emailDeadline;
 
     jobs.push({
       title: cleanedTitle,
@@ -124,13 +140,14 @@ function extractJobsFromHtml(html, senderEmail = "", subject = "") {
       location: meta.location,
       context: meta.context,
       source: sourceTag,
+      deadline: cardDeadline,
+      isActive: 1,
     });
   });
 
   // 2. Intelligent Superset Email Body / Announcement Extractor
   if (isSuperset) {
-    const bodyText = $.text().replace(/\s+/g, " ");
-    const match = bodyText.match(/(?:for|at)\s+([A-Za-z0-9\s&.,-]+?)'?s?\s+Job Profile:?\s*([A-Za-z0-9\s/,-]+?)(?:\.|\n|New Deadline|Deadline|If you have)/i);
+    const match = rawBodyText.match(/(?:for|at)\s+([A-Za-z0-9\s&.,-]+?)'?s?\s+Job Profile:?\s*([A-Za-z0-9\s/,-]+?)(?:\.|\n|New Deadline|Deadline|If you have)/i);
     if (match) {
       const company = match[1].trim();
       const rawTitles = match[2].trim();
@@ -145,8 +162,10 @@ function extractJobsFromHtml(html, senderEmail = "", subject = "") {
           company: company || "Campus Partner",
           location: "Campus / Hybrid",
           url: applyLink,
-          context: bodyText.slice(0, 500),
+          context: rawBodyText.slice(0, 500),
           source: "superset",
+          deadline: emailDeadline,
+          isActive: 1,
         });
       }
     }
