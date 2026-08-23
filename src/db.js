@@ -616,6 +616,27 @@ export function cleanupDuplicateJobs() {
   }
 }
 
+/**
+ * Purges unapplied, un-tailored postings older than maxDays (default: 2 days / 48 hours)
+ */
+export function purgeOldUnappliedJobs(maxDays = 2) {
+  try {
+    const result = db.prepare(`
+      DELETE FROM jobs
+      WHERE (status IS NULL OR status = 'new')
+        AND id NOT IN (SELECT job_id FROM tailored_documents WHERE tailored_resume IS NOT NULL)
+        AND id NOT IN (SELECT job_id FROM applications WHERE status NOT IN ('NOT_APPLIED', 'new'))
+        AND created_at < datetime('now', '-' || ? || ' days')
+        AND (received_at IS NULL OR received_at < datetime('now', '-' || ? || ' days'))
+    `).run(maxDays, maxDays);
+
+    return { ok: true, purgedCount: result.changes };
+  } catch (err) {
+    console.error("[Purge Old Jobs Error]:", err);
+    return { ok: false, error: err.message };
+  }
+}
+
 export function listJobs({ status, source } = {}) {
   let query = `
     SELECT 

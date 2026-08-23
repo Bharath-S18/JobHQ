@@ -1,8 +1,8 @@
 import { google } from "googleapis";
 import * as cheerio from "cheerio";
 
-// Scans for LinkedIn job alert emails and Superset college placement/internship notifications
-const GMAIL_QUERY = 'from:(jobalerts-noreply@linkedin.com OR jobs-noreply@linkedin.com OR joinsuperset.com OR superset) newer_than:30d';
+// Scans for LinkedIn job alert emails and Superset college placement/internship notifications from the last 2 days (48 hours)
+const GMAIL_QUERY = 'from:(jobalerts-noreply@linkedin.com OR jobs-noreply@linkedin.com OR joinsuperset.com OR superset) newer_than:2d';
 
 function decodeBody(payload) {
   function walk(part) {

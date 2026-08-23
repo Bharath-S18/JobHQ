@@ -50,15 +50,22 @@ import {
   getTelemetryFeed,
   getGmailAlertsList,
   cleanupDuplicateJobs,
+  purgeOldUnappliedJobs,
 } from "./src/db.js";
 
-// Run one-time database duplicate cleaner and source normalizer on startup
+// Run one-time database duplicate cleaner, source normalizer, and 2-day expired jobs purge
 try {
   const cleanupStats = cleanupDuplicateJobs();
   if (cleanupStats.removedCount > 0 || cleanupStats.updatedSources > 0) {
     console.log(`[DB Cleaner] Deduplicated ${cleanupStats.removedCount} jobs, normalized ${cleanupStats.updatedSources} sources.`);
   }
-} catch (e) {}
+  const purgeStats = purgeOldUnappliedJobs(2);
+  if (purgeStats.purgedCount > 0) {
+    console.log(`[DB Cleaner] Auto-purged ${purgeStats.purgedCount} unapplied postings older than 2 days.`);
+  }
+} catch (e) {
+  console.warn("[DB Cleaner Warning]:", e.message);
+}
 
 const app = express();
 app.use(express.json());
@@ -442,6 +449,16 @@ app.post("/api/scrapers/run", async (req, res) => {
 app.post("/api/jobs/cleanup-duplicates", (req, res) => {
   try {
     const result = cleanupDuplicateJobs();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/jobs/purge-old", (req, res) => {
+  try {
+    const maxDays = Number(req.query.days || req.body.days || 2);
+    const result = purgeOldUnappliedJobs(maxDays);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });

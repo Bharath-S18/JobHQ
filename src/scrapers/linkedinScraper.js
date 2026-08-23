@@ -7,7 +7,8 @@ import * as cheerio from "cheerio";
  */
 export async function scrapeLinkedInJobs({ query = "Software Engineer", location = "India", limit = 10 } = {}) {
   try {
-    const searchUrl = `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}&start=0`;
+    // f_TPR=r172800 limits search strictly to postings from the last 48 hours (2 days)
+    const searchUrl = `https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search?keywords=${encodeURIComponent(query)}&location=${encodeURIComponent(location)}&f_TPR=r172800&start=0`;
 
     const res = await fetch(searchUrl, {
       headers: {
