@@ -23,12 +23,46 @@ function decodeBody(payload) {
   return walk(payload) || "";
 }
 
+const JUNK_TITLE_PATTERNS = [
+  /help\s*page/i,
+  /click\s*to\s*apply/i,
+  /app\.joinsuperset/i,
+  /view\s*all/i,
+  /unsubscribe/i,
+  /privacy\s*policy/i,
+  /settings/i,
+  /manage\s*alerts/i,
+  /login/i,
+  /dashboard/i,
+  /support/i,
+  /terms\s*of\s*service/i,
+];
+
+const JUNK_URL_PATTERNS = [
+  /\/support/i,
+  /\/students\/jobprofiles$/i,
+  /\/settings/i,
+  /\/unsubscribe/i,
+  /\/privacy/i,
+  /\/help/i,
+  /joinsuperset\.com$/i,
+];
+
+function isJunkJob(title, url) {
+  if (!title || title.length < 3) return true;
+  if (!url || url.length < 10) return true;
+  if (JUNK_TITLE_PATTERNS.some((p) => p.test(title))) return true;
+  if (JUNK_URL_PATTERNS.some((p) => p.test(url))) return true;
+  return false;
+}
+
 function cleanTitle(raw) {
-  if (!raw) return "Software Engineering Role";
+  if (!raw) return "";
   return raw
     .replace(/\s+/g, " ")
     .replace(/^[\s\n\r]+|[\s\n\r]+$/g, "")
     .replace(/\s*·\s*(LinkedIn|Superset|Naukri).*$/i, "")
+    .replace(/^apply\s*(now|to|for)?\s*:?/i, "")
     .trim();
 }
 
@@ -39,39 +73,39 @@ function parseLinkedInCard($, container) {
   let company = "Target Company";
   let location = "Remote / Hybrid";
 
-  if (lines.length >= 2) {
+  if (lines.length >= 2 && lines[1].length < 60) {
     company = lines[1];
   }
-  if (lines.length >= 3) {
+  if (lines.length >= 3 && lines[2].length < 60) {
     location = lines[2];
   }
 
   return { company, location, context: fullText.slice(0, 400) };
 }
 
-function extractJobsFromHtml(html, senderEmail = "") {
+function extractJobsFromHtml(html, senderEmail = "", subject = "") {
   const $ = cheerio.load(html);
   const jobs = [];
   const seenUrls = new Set();
 
-  const isSuperset = senderEmail.includes("superset") || html.includes("joinsuperset.com");
+  const isSuperset = senderEmail.includes("superset") || html.includes("joinsuperset.com") || subject.toLowerCase().includes("superset");
 
-  // 1. Check for standard LinkedIn / Superset / Job links
-  $('a[href*="/jobs/view/"], a[href*="redirect.linkedin.com"], a[href*="linkedin.com/comm/jobs"], a[href*="joinsuperset.com"], a[href*="job_profile"]').each((_, el) => {
+  // 1. Check for standard LinkedIn / Superset job links
+  $('a[href*="/jobs/view/"], a[href*="redirect.linkedin.com"], a[href*="linkedin.com/comm/jobs"], a[href*="joinsuperset.com/students/jobprofiles/"]').each((_, el) => {
     const rawHref = $(el).attr("href");
     const titleText = $(el).text().trim();
     if (!rawHref || !titleText || titleText.length < 3) return;
 
-    if (/view\s*all|unsubscribe|settings|manage\s*alerts|privacy|login|dashboard/i.test(titleText)) return;
-
     let cleanUrl = rawHref;
     if (cleanUrl.includes("?")) {
       const parts = cleanUrl.split("?");
-      if (parts[0].includes("/jobs/view/") || parts[0].includes("joinsuperset.com")) {
+      if (parts[0].includes("/jobs/view/") || parts[0].includes("jobprofiles/")) {
         cleanUrl = parts[0];
       }
     }
 
+    const cleanedTitle = cleanTitle(titleText);
+    if (isJunkJob(cleanedTitle, cleanUrl)) return;
     if (seenUrls.has(cleanUrl)) return;
     seenUrls.add(cleanUrl);
 
@@ -79,30 +113,38 @@ function extractJobsFromHtml(html, senderEmail = "") {
     const meta = parseLinkedInCard($, parentBox);
 
     jobs.push({
-      title: cleanTitle(titleText),
+      title: cleanedTitle,
       url: cleanUrl,
-      company: meta.company !== titleText ? meta.company : (isSuperset ? "Campus Recruiter via Superset" : "Company via Alert"),
+      company: meta.company !== titleText ? meta.company : (isSuperset ? "Campus Partner" : "Company via Alert"),
       location: meta.location,
       context: meta.context,
       source: isSuperset ? "superset" : "gmail_alert",
     });
   });
 
-  // 2. Fallback for Superset structured announcement headers
-  if (jobs.length === 0 && isSuperset) {
-    const heading = $("h1, h2, h3, .job-title").first().text().trim();
-    const comp = $(".company-name, .recruiter").first().text().trim() || "Campus Partner via Superset";
-    const applyLink = $("a[href*='http']").first().attr("href");
+  // 2. Intelligent Superset Email Body / Announcement Extractor
+  if (isSuperset) {
+    const bodyText = $.text().replace(/\s+/g, " ");
+    // Pattern: "Job Profile: <Title> at <Company>" or "<Company>'s Job Profile: <Title>"
+    const match = bodyText.match(/(?:for|at)\s+([A-Za-z0-9\s&.,-]+?)'?s?\s+Job Profile:?\s*([A-Za-z0-9\s/,-]+?)(?:\.|\n|New Deadline|Deadline|If you have)/i);
+    if (match) {
+      const company = match[1].trim();
+      const rawTitles = match[2].trim();
+      const firstTitle = rawTitles.split(/[,/]/)[0].trim();
+      
+      const applyLink = $("a[href*='joinsuperset.com']").first().attr("href") || "https://app.joinsuperset.com";
 
-    if (heading && applyLink) {
-      jobs.push({
-        title: cleanTitle(heading),
-        url: applyLink,
-        company: comp,
-        location: "Campus / Hybrid",
-        context: $.text().slice(0, 400),
-        source: "superset",
-      });
+      if (firstTitle && !seenUrls.has(applyLink + "_" + firstTitle)) {
+        seenUrls.add(applyLink + "_" + firstTitle);
+        jobs.push({
+          title: cleanTitle(firstTitle),
+          company: company || "Campus Partner",
+          location: "Campus / Hybrid",
+          url: applyLink,
+          context: bodyText.slice(0, 500),
+          source: "superset",
+        });
+      }
     }
   }
 
@@ -136,7 +178,7 @@ export async function fetchLinkedInJobAlerts(authClient, { maxResults = 30 } = {
       const html = decodeBody(msg.data.payload);
       if (!html) continue;
 
-      const jobs = extractJobsFromHtml(html, fromHeader);
+      const jobs = extractJobsFromHtml(html, fromHeader, subjectHeader);
       for (const job of jobs) {
         allJobs.push({
           ...job,
