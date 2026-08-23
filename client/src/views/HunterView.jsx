@@ -241,12 +241,29 @@ export default function HunterView({
     return { label: 'Direct Scraped', cls: 'text-slate-400 bg-slate-800 border-slate-700' };
   };
 
+  const isDeadlineExpired = (deadlineStr) => {
+    if (!deadlineStr) return false;
+    try {
+      const currentYear = new Date().getFullYear();
+      let clean = deadlineStr.replace(/^(?:new\s+deadline|deadline|apply\s+before|last\s+date\s*(?:to\s*apply)?)\s*:?\s*/i, '').trim();
+      if (!/\b(202\d)\b/.test(clean)) {
+        clean = `${clean}, ${currentYear}`;
+      }
+      const parsed = Date.parse(clean);
+      if (!isNaN(parsed)) {
+        return parsed < Date.now();
+      }
+    } catch (e) {}
+    return false;
+  };
+
   const getStatusBadge = (status) => {
     const s = (status || 'new').toLowerCase();
     if (s === 'applied') return { label: 'APPLIED', cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' };
     if (s === 'tailored') return { label: 'TAILORED', cls: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' };
     if (s === 'interviewing') return { label: 'INTERVIEWING', cls: 'bg-purple-500/20 text-purple-300 border-purple-500/30' };
     if (s === 'offered') return { label: 'OFFERED', cls: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30' };
+    if (s === 'closed') return { label: 'CLOSED', cls: 'bg-rose-500/20 text-rose-300 border-rose-500/30' };
     return { label: 'NEW', cls: 'bg-amber-500/10 text-amber-300 border-amber-500/20' };
   };
 
@@ -578,23 +595,31 @@ export default function HunterView({
                       <span className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded border font-semibold ${statusInfo.cls}`}>
                         {statusInfo.label}
                       </span>
-                      {job.deadline && (
-                        <span className="flex items-center gap-1 text-[10px] font-mono font-medium px-2 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300">
-                          <Clock className="h-2.5 w-2.5 text-amber-400" />
-                          <span>Deadline: {job.deadline}</span>
-                        </span>
-                      )}
-                      {job.is_active === 0 || job.status === 'closed' ? (
-                        <span className="flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded border border-rose-500/30 bg-rose-500/10 text-rose-300 font-semibold">
-                          <AlertCircle className="h-2.5 w-2.5" />
-                          Closed
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 font-medium">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                          Actively Hiring
-                        </span>
-                      )}
+                      {(() => {
+                        const expired = isDeadlineExpired(job.deadline) || job.is_active === 0 || job.status === 'closed';
+                        if (expired) {
+                          return (
+                            <span className="flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded border border-rose-500/40 bg-rose-500/10 text-rose-300 font-semibold">
+                              <AlertCircle className="h-2.5 w-2.5 text-rose-400" />
+                              <span>{job.deadline ? `Deadline Passed (${job.deadline})` : 'Closed'}</span>
+                            </span>
+                          );
+                        }
+                        return (
+                          <>
+                            {job.deadline && (
+                              <span className="flex items-center gap-1 text-[10px] font-mono font-medium px-2 py-0.5 rounded border border-amber-500/30 bg-amber-500/10 text-amber-300">
+                                <Clock className="h-2.5 w-2.5 text-amber-400" />
+                                <span>Deadline: {job.deadline}</span>
+                              </span>
+                            )}
+                            <span className="flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 font-medium">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                              Actively Hiring
+                            </span>
+                          </>
+                        );
+                      })()}
                     </div>
 
                     {typeof job.match_score === 'number' && (

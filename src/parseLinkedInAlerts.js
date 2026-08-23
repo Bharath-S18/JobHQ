@@ -98,6 +98,22 @@ function extractDeadline(text) {
   return null;
 }
 
+export function isDeadlineExpired(deadlineStr) {
+  if (!deadlineStr) return false;
+  try {
+    const currentYear = new Date().getFullYear();
+    let clean = deadlineStr.replace(/^(?:new\s+deadline|deadline|apply\s+before|last\s+date\s*(?:to\s*apply)?)\s*:?\s*/i, '').trim();
+    if (!/\b(202\d)\b/.test(clean)) {
+      clean = `${clean}, ${currentYear}`;
+    }
+    const parsed = Date.parse(clean);
+    if (!isNaN(parsed)) {
+      return parsed < Date.now();
+    }
+  } catch (e) {}
+  return false;
+}
+
 function extractJobsFromHtml(html, senderEmail = "", subject = "") {
   const $ = cheerio.load(html);
   const jobs = [];
@@ -132,40 +148,56 @@ function extractJobsFromHtml(html, senderEmail = "", subject = "") {
     const parentBox = $(el).closest("table, tr, td, div");
     const meta = parseLinkedInCard($, parentBox);
     const cardDeadline = extractDeadline(meta.context) || emailDeadline;
+    const isExpired = isDeadlineExpired(cardDeadline);
+
+    // Extract better company if email mentions it
+    let resolvedCompany = meta.company;
+    if (isSuperset) {
+      const compMatch = rawBodyText.match(/(?:from|for|at)\s+([A-Za-z0-9\s&.,-]+?)(?:!|'s\s+Job Profile|'s\s+Job)/i);
+      if (compMatch && compMatch[1].length < 50 && !compMatch[1].toLowerCase().includes("document")) {
+        resolvedCompany = compMatch[1].trim();
+      } else if (!resolvedCompany || resolvedCompany === "Company on LinkedIn") {
+        resolvedCompany = "Campus Placement Partner";
+      }
+    }
 
     jobs.push({
       title: cleanedTitle,
       url: cleanUrl,
-      company: meta.company !== titleText && meta.company !== "Company on LinkedIn" ? meta.company : (isSuperset ? "Campus Partner" : "Company via LinkedIn Alert"),
+      company: resolvedCompany !== titleText && resolvedCompany !== "Company on LinkedIn" ? resolvedCompany : (isSuperset ? "Campus Placement Partner" : "Company via LinkedIn Alert"),
       location: meta.location,
       context: meta.context,
       source: sourceTag,
       deadline: cardDeadline,
-      isActive: 1,
+      status: isExpired ? "closed" : "new",
+      isActive: isExpired ? 0 : 1,
     });
   });
 
   // 2. Intelligent Superset Email Body / Announcement Extractor
   if (isSuperset) {
-    const match = rawBodyText.match(/(?:for|at)\s+([A-Za-z0-9\s&.,-]+?)'?s?\s+Job Profile:?\s*([A-Za-z0-9\s/,-]+?)(?:\.|\n|New Deadline|Deadline|If you have)/i);
-    if (match) {
-      const company = match[1].trim();
-      const rawTitles = match[2].trim();
-      const firstTitle = rawTitles.split(/[,/]/)[0].trim();
-      
-      const applyLink = $("a[href*='joinsuperset.com']").first().attr("href") || "https://app.joinsuperset.com";
+    const compMatch = rawBodyText.match(/(?:from|for|at)\s+([A-Za-z0-9\s&.,-]+?)(?:!|'s\s+Job Profile|'s\s+Job)/i);
+    const titleMatch = rawBodyText.match(/Job Profile\s*[:-]?\s*([A-Za-z0-9\s/,-]+?)(?:\s+in\s+CTC|\.|\n|Deadline|Click to Apply)/i);
 
-      if (firstTitle && !seenUrls.has(applyLink + "_" + firstTitle)) {
-        seenUrls.add(applyLink + "_" + firstTitle);
+    const company = compMatch && compMatch[1].length < 50 && !compMatch[1].toLowerCase().includes("document") ? compMatch[1].trim() : "Campus Placement Partner";
+    const rawTitle = titleMatch ? titleMatch[1].trim() : "";
+
+    if (rawTitle) {
+      const applyLink = $("a[href*='joinsuperset.com']").first().attr("href") || "https://app.joinsuperset.com";
+      const isExpired = isDeadlineExpired(emailDeadline);
+
+      if (!seenUrls.has(applyLink + "_" + rawTitle)) {
+        seenUrls.add(applyLink + "_" + rawTitle);
         jobs.push({
-          title: cleanTitle(firstTitle),
-          company: company || "Campus Partner",
+          title: cleanTitle(rawTitle),
+          company: company,
           location: "Campus / Hybrid",
           url: applyLink,
           context: rawBodyText.slice(0, 500),
           source: "superset",
           deadline: emailDeadline,
-          isActive: 1,
+          status: isExpired ? "closed" : "new",
+          isActive: isExpired ? 0 : 1,
         });
       }
     }
