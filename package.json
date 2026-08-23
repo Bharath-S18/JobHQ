@@ -21,8 +21,7 @@
     "googleapis": "^140.0.1",
     "multer": "^2.2.0",
     "node-fetch": "^3.3.2",
-    "pdf-parse": "^2.4.5",
-    "puppeteer": "^25.7.0"
+    "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
     "concurrently": "^10.0.5"

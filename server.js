@@ -27,15 +27,6 @@ import {
   aggregateUpskillGaps,
 } from "./src/tailor.js";
 import {
-  runHunterOnce,
-  getHunterStatus,
-} from "./src/hunter/hunterEngine.js";
-import {
-  launchUserLoginWindow,
-  checkLinkedInSession,
-  closeManagedBrowser,
-} from "./src/hunter/browserSession.js";
-import {
   saveProfile,
   getProfile,
   upsertJob,
@@ -845,43 +836,31 @@ app.post("/api/analytics/add-skill-to-profile", (req, res) => {
   }
 });
 
-// ---------- Self-Hosted Local Browser Job Hunter Engine ----------
-
-app.post("/api/hunter/connect-browser", async (req, res) => {
-  try {
-    const result = await launchUserLoginWindow();
-    res.json(result);
-  } catch (err) {
-    console.error("[Hunter Connect Error]:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
+// ---------- Multi-Portal Job Scout System ----------
 
 app.get("/api/hunter/status", (req, res) => {
-  try {
-    const status = getHunterStatus();
-    res.json(status);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  res.json({
+    ok: true,
+    engine: "lightweight-public-scout",
+    portals: ["linkedin", "indeed", "naukri", "wellfound"],
+    browserRequired: false,
+  });
 });
 
 app.post("/api/hunter/run-once", async (req, res) => {
   try {
-    const maxItems = Number(req.body.maxItems) || 6;
-    const result = await runHunterOnce({ maxItems });
+    const profile = getProfile();
+    const query = profile?.structured?.desiredRole || "Software Engineer";
+    const location = profile?.structured?.targetLocation || "India";
+    const result = await scoutAllPortals({
+      portals: ["linkedin", "indeed", "naukri", "wellfound"],
+      query,
+      location,
+      limitPerPortal: 6,
+    });
     res.json(result);
   } catch (err) {
     console.error("[Hunter Run Error]:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post("/api/hunter/close-browser", async (req, res) => {
-  try {
-    const result = await closeManagedBrowser();
-    res.json(result);
-  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

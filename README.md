@@ -91,12 +91,12 @@ JobHQ/
 │   ├── resume_parser.js     # High-precision PDF parser & text extractor
 │   ├── resumeRenderer.js    # PDF & HTML document generation engine
 │   ├── tailor.js            # Gemini AI tailoring & match scoring engine
-│   └── hunter/              # Autonomous Hunter Subsystem
-│       ├── browserSession.js # Puppeteer session & browser pool manager
-│       ├── hunterEngine.js   # Hunter scheduler & orchestration pipeline
-│       ├── collectorWorker.js # Stage 1: Card harvesting & staging
-│       ├── extractorWorker.js # Stage 2: Full job description extraction
-│       └── matchWorker.js    # Stage 3: Candidate fit calculation
+│   └── scrapers/            # High-Performance Public Scraper Subsystem
+│       ├── portalManager.js # Multi-portal orchestrator & deduplication
+│       ├── linkedinScraper.js # LinkedIn public guest API scraper
+│       ├── indeedScraper.js # Indeed RSS & developer feeds scraper
+│       ├── naukriScraper.js # Naukri public catalog & schema scraper
+│       └── wellfoundScraper.js # Wellfound & startup roles scraper
 ├── server.js                # Express REST API Server & background workers
 ├── package.json             # Project dependencies & scripts
 └── README.md                # Project documentation
