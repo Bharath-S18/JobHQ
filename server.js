@@ -334,6 +334,8 @@ app.get("/auth/google/callback", async (req, res) => {
 
 app.post("/api/auth/logout", (req, res) => {
   try {
+    if (fs.existsSync("./data/gmail-token.json")) fs.unlinkSync("./data/gmail-token.json");
+    if (fs.existsSync("./data/user-profile.json")) fs.unlinkSync("./data/user-profile.json");
     if (fs.existsSync("./data/tokens.json")) fs.unlinkSync("./data/tokens.json");
     if (fs.existsSync("./data/user_profile.json")) fs.unlinkSync("./data/user_profile.json");
     res.json({ ok: true });
