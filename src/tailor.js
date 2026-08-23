@@ -8,10 +8,21 @@ import { ollamaGenerate } from "./ollama.js";
 // 3. Ollama local LLM if TAILOR_PROVIDER === "ollama"
 // 4. Deterministic Local Skill-Match Engine (offline fallback, 100% reliable)
 
+function isValidApiKey(key) {
+  if (!key || typeof key !== "string") return false;
+  const trimmed = key.trim();
+  if (trimmed.length < 15) return false;
+  if (trimmed.startsWith("YOUR_") || trimmed.includes("YOUR_REAL") || trimmed.includes("YOUR_KEY")) return false;
+  return true;
+}
+
 function getActiveProvider() {
-  if (process.env.TAILOR_PROVIDER) return process.env.TAILOR_PROVIDER.toLowerCase();
-  if (process.env.GEMINI_API_KEY) return "gemini";
-  if (process.env.ANTHROPIC_API_KEY) return "anthropic";
+  const provider = (process.env.TAILOR_PROVIDER || "").toLowerCase();
+  if (provider === "gemini" && isValidApiKey(process.env.GEMINI_API_KEY)) return "gemini";
+  if (provider === "anthropic" && isValidApiKey(process.env.ANTHROPIC_API_KEY)) return "anthropic";
+  if (provider === "ollama") return "ollama";
+  if (isValidApiKey(process.env.GEMINI_API_KEY)) return "gemini";
+  if (isValidApiKey(process.env.ANTHROPIC_API_KEY)) return "anthropic";
   return "deterministic";
 }
 
