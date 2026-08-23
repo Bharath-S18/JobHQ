@@ -8,8 +8,10 @@ import {
   ExternalLink,
   Layers,
   Search,
-  Plus
+  Plus,
+  LogOut
 } from 'lucide-react';
+import { api } from '../services/api';
 
 export default function Navbar({ 
   authStatus, 
@@ -60,12 +62,29 @@ export default function Navbar({
         {/* Status Integrations & Actions */}
         <div className="flex items-center gap-3">
           
-          {/* Gmail Status */}
+          {/* Gmail Status & Logout */}
           {authStatus?.connected ? (
-            <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
-              <Mail className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{authStatus.user?.email || 'Gmail Synced'}</span>
+            <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-300">
+                <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
+                <Mail className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{authStatus.user?.email || 'Gmail Synced'}</span>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    await api.logout();
+                    if (onRefresh) onRefresh();
+                  } catch (e) {
+                    alert('Logout error: ' + e.message);
+                  }
+                }}
+                className="flex items-center gap-1 rounded-lg border border-slate-800 bg-slate-900/60 px-2 py-1.5 text-xs text-slate-400 hover:text-red-400 hover:border-red-500/30 transition"
+                title="Disconnect Google / Logout"
+              >
+                <LogOut className="h-3 w-3" />
+                <span className="hidden md:inline">Disconnect</span>
+              </button>
             </div>
           ) : (
             <a
