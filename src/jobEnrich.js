@@ -74,9 +74,76 @@ export async function fetchLeverJob(board, jobId) {
  * Resolves job postings from arbitrary links, Greenhouse/Lever boards, and extracts
  * title, company, requirements, and clean description.
  */
-export async function scrapeJobFromUrl(targetUrl) {
-  if (!targetUrl || typeof targetUrl !== "string") {
-    throw new Error("Valid job URL is required");
+export async function scrapeJobFromUrl(targetInput) {
+  if (!targetInput || typeof targetInput !== "string") {
+    throw new Error("Valid job URL or description text is required");
+  }
+
+  const trimmed = targetInput.trim();
+  const isUrl = trimmed.startsWith("http://") || trimmed.startsWith("https://");
+
+  // If user pasted raw job description text instead of a URL
+  if (!isUrl) {
+    const lines = trimmed.split("\n").map((l) => l.trim()).filter(Boolean);
+    const title = lines[0] || "Custom Software Role";
+    let company = "Direct Company";
+    if (lines[1] && lines[1].length < 60 && !lines[1].toLowerCase().includes("description")) {
+      company = lines[1];
+    }
+    return {
+      title: title.slice(0, 100),
+      company: company.slice(0, 100),
+      url: `https://jobhq.local/custom-${Date.now()}`,
+      finalUrl: `https://jobhq.local/custom-${Date.now()}`,
+      description: trimmed,
+      location: "Remote / Onsite",
+      ats: "direct",
+      source: "direct",
+      canAutoSubmit: 0,
+    };
+  }
+
+  const targetUrl = trimmed;
+
+  // 1. Specialized LinkedIn Job ID Public Guest Extractor
+  const liIdMatch = targetUrl.match(/\/jobs\/view\/([0-9]+)/) || targetUrl.match(/currentJobId=([0-9]+)/) || targetUrl.match(/\/([0-9]{8,12})/);
+  if (targetUrl.includes("linkedin.com") && liIdMatch) {
+    try {
+      const jobId = liIdMatch[1];
+      const guestUrl = `https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/${jobId}`;
+      const liRes = await fetch(guestUrl, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        },
+      });
+
+      if (liRes.ok) {
+        const liHtml = await liRes.text();
+        const $li = cheerio.load(liHtml);
+        const title = $li(".top-card-layout__title, .topcard__title, h2").first().text().trim();
+        const company = $li(".topcard__org-name-link, .top-card-layout__first-subline a, .topcard__flavor").first().text().trim();
+        const location = $li(".topcard__flavor--bullet, .top-card-layout__second-subline").first().text().trim();
+        const description = $li(".show-more-less-html__markup, .description__text").text().trim();
+
+        if (title) {
+          return {
+            title,
+            company: company || "Company on LinkedIn",
+            url: targetUrl.split("?")[0],
+            finalUrl: targetUrl.split("?")[0],
+            description: description || `Role: ${title} at ${company}. Location: ${location}.`,
+            location: location || "Remote / Onsite",
+            ats: "linkedin",
+            source: "linkedin",
+            canAutoSubmit: 0,
+          };
+        }
+      }
+    } catch (e) {
+      console.warn("[LinkedIn Guest Extract Fallback]:", e.message);
+    }
   }
 
   const res = await fetch(targetUrl, {
@@ -96,7 +163,7 @@ export async function scrapeJobFromUrl(targetUrl) {
   const html = await res.text();
   const $ = cheerio.load(html);
 
-  // 1. Check for Greenhouse API
+  // 2. Check for Greenhouse API
   const ghMatch = finalUrl.match(/boards\.greenhouse\.io\/([^/]+)\/jobs\/(\d+)/);
   if (ghMatch) {
     const board = ghMatch[1];
@@ -112,6 +179,7 @@ export async function scrapeJobFromUrl(targetUrl) {
         description: plainText,
         location: ghData.location?.name || "Remote / Hybrid",
         ats: "greenhouse",
+        source: "greenhouse",
         atsBoard: board,
         atsJobId: jobId,
         canAutoSubmit: 1,
@@ -119,7 +187,7 @@ export async function scrapeJobFromUrl(targetUrl) {
     }
   }
 
-  // 2. Check for Lever API
+  // 3. Check for Lever API
   const leverMatch = finalUrl.match(/jobs\.lever\.co\/([^/]+)\/([a-f0-9-]+)/);
   if (leverMatch) {
     const board = leverMatch[1];
@@ -135,6 +203,7 @@ export async function scrapeJobFromUrl(targetUrl) {
         description: plainDesc,
         location: leverData.categories?.location || "Remote / Hybrid",
         ats: "lever",
+        source: "lever",
         atsBoard: board,
         atsJobId: jobId,
         canAutoSubmit: 1,
@@ -142,7 +211,7 @@ export async function scrapeJobFromUrl(targetUrl) {
     }
   }
 
-  // 3. Schema.org JSON-LD JobPosting Extraction
+  // 4. Schema.org JSON-LD JobPosting Extraction
   let jsonLdJob = null;
   $('script[type="application/ld+json"]').each((_, el) => {
     try {
@@ -166,6 +235,7 @@ export async function scrapeJobFromUrl(targetUrl) {
       description: descText.slice(0, 5000),
       location: jsonLdJob.jobLocation?.address?.addressLocality || "Remote / Hybrid",
       ats: "direct",
+      source: targetUrl.includes("naukri") ? "naukri" : targetUrl.includes("wellfound") ? "wellfound" : "direct",
       canAutoSubmit: 0,
     };
   }

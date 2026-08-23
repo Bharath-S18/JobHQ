@@ -531,39 +531,71 @@ export function upsertJob(job) {
   return { id: newJobId, isNew: true };
 }
 
-// Cleans up existing duplicates from the database and fixes mislabeled source tags
+// Cleans up existing duplicates from the database and fixes mislabeled source tags & statuses
 export function cleanupDuplicateJobs() {
   try {
     const allJobs = db.prepare(`SELECT * FROM jobs ORDER BY id ASC`).all();
-    const seenHashes = new Map();
-    const seenUrls = new Map();
+    const seenKeys = new Map();
     let removedCount = 0;
     let updatedSources = 0;
 
     for (const job of allJobs) {
       const canonical = canonicalizeUrl(job.url || job.canonical_url);
-      const hash = job.content_hash || computeContentHash(job.title, job.company, job.description);
+      const hash = computeContentHash(job.title, job.company, job.description);
       const correctSource = detectJobSource(job);
 
-      // Fix mislabeled source if needed
-      if (correctSource !== job.source) {
-        db.prepare(`UPDATE jobs SET source = ? WHERE id = ?`).run(correctSource, job.id);
-        updatedSources++;
-      }
+      // Extract unique identifier (e.g. LinkedIn 8-12 digit ID)
+      const liIdMatch = (job.url || "").match(/\/([0-9]{8,12})/);
+      const dedupeKey = liIdMatch
+        ? `li_${liIdMatch[1]}`
+        : canonical || `${job.title.toLowerCase().trim().slice(0, 30)}::${(job.company || "").toLowerCase().trim()}`;
 
-      // Check for duplicates by canonical URL or content hash
-      const existingId = seenUrls.get(canonical) || seenHashes.get(hash);
+      // Check for duplicates
+      const existingId = seenKeys.get(dedupeKey);
       if (existingId) {
-        // Remove duplicate job row and associated matches/tailoring
+        // Remove duplicate job row and associated application/matches
         db.prepare(`DELETE FROM jobs WHERE id = ?`).run(job.id);
         db.prepare(`DELETE FROM applications WHERE job_id = ?`).run(job.id);
         db.prepare(`DELETE FROM job_matches WHERE job_id = ?`).run(job.id);
         db.prepare(`DELETE FROM tailored_documents WHERE job_id = ?`).run(job.id);
         removedCount++;
-      } else {
-        if (canonical) seenUrls.set(canonical, job.id);
-        if (hash) seenHashes.set(hash, job.id);
+        continue;
       }
+
+      seenKeys.set(dedupeKey, job.id);
+
+      // Clean up title and company if corrupted by alert email formatting
+      let cleanTitle = job.title;
+      let cleanCompany = job.company;
+      let cleanLocation = job.location;
+      if (cleanTitle && (cleanTitle.includes("       ") || cleanTitle.includes(" · "))) {
+        const parts = cleanTitle.split(/ {3,}| · /);
+        cleanTitle = parts[0].trim();
+        if (parts[1] && (!cleanCompany || cleanCompany === "LinkedIn")) {
+          cleanCompany = parts[1].trim();
+        }
+        if (parts[2] && (!cleanLocation || cleanLocation === "Remote / Onsite")) {
+          cleanLocation = parts[2].replace(/Easy Apply/gi, "").trim();
+        }
+      }
+
+      // Fix status: new unless tailored bullets exist or set to applied/interviewing
+      let normalizedStatus = (job.status || "new").toLowerCase();
+      if (!["tailored", "applied", "interviewing", "offered", "rejected"].includes(normalizedStatus)) {
+        normalizedStatus = "new";
+      }
+
+      db.prepare(`
+        UPDATE jobs SET
+          source = ?,
+          title = ?,
+          company = ?,
+          location = COALESCE(?, location),
+          status = ?
+        WHERE id = ?
+      `).run(correctSource, cleanTitle, cleanCompany, cleanLocation, normalizedStatus, job.id);
+
+      updatedSources++;
     }
 
     return { ok: true, removedCount, updatedSources, totalRemaining: allJobs.length - removedCount };
@@ -577,30 +609,27 @@ export function listJobs({ status, source } = {}) {
   let query = `
     SELECT 
       j.*,
-      COALESCE(jm.score, j.match_score) as match_score,
-      COALESCE(jm.reasoning, j.match_reason) as match_reason,
-      COALESCE(td.tailored_resume, j.tailored_resume) as tailored_resume,
-      COALESCE(td.tailored_cover_letter, j.tailored_cover_letter) as tailored_cover_letter,
-      COALESCE(a.status, j.status, 'new') as app_status
+      COALESCE((SELECT score FROM job_matches WHERE job_id = j.id ORDER BY id DESC LIMIT 1), j.match_score) as match_score,
+      COALESCE((SELECT reasoning FROM job_matches WHERE job_id = j.id ORDER BY id DESC LIMIT 1), j.match_reason) as match_reason,
+      COALESCE((SELECT tailored_resume FROM tailored_documents WHERE job_id = j.id ORDER BY id DESC LIMIT 1), j.tailored_resume) as tailored_resume,
+      COALESCE((SELECT tailored_cover_letter FROM tailored_documents WHERE job_id = j.id ORDER BY id DESC LIMIT 1), j.tailored_cover_letter) as tailored_cover_letter,
+      COALESCE(j.status, (SELECT status FROM applications WHERE job_id = j.id ORDER BY id DESC LIMIT 1), 'new') as app_status
     FROM jobs j
-    LEFT JOIN job_matches jm ON jm.job_id = j.id AND jm.profile_id = 1
-    LEFT JOIN tailored_documents td ON td.job_id = j.id AND td.profile_id = 1
-    LEFT JOIN applications a ON a.job_id = j.id
   `;
 
   const where = [];
   const params = [];
 
   if (status) {
-    where.push(`(j.status = ? OR a.status = ?)`);
-    params.push(status, status);
+    where.push(`(j.status = ?)`);
+    params.push(status);
   }
 
   if (source) {
     if (source === "gmail" || source === "gmail_alert") {
-      where.push(`(j.source IN ('gmail_alert', 'superset', 'email'))`);
+      where.push(`(j.source IN ('gmail_alert', 'gmail', 'superset', 'email'))`);
     } else {
-      where.push(`(j.source = ?)`);
+      where.push(`(LOWER(j.source) = LOWER(?))`);
       params.push(source);
     }
   }
@@ -630,11 +659,12 @@ export function getTelemetryFeed(limit = 25) {
 
 export function getGmailAlertsList(limit = 30) {
   return db.prepare(`
-    SELECT j.*, a.status as app_status, COALESCE(jm.score, j.match_score) as match_score
+    SELECT 
+      j.*, 
+      COALESCE(j.status, 'new') as app_status, 
+      COALESCE((SELECT score FROM job_matches WHERE job_id = j.id ORDER BY id DESC LIMIT 1), j.match_score) as match_score
     FROM jobs j
-    LEFT JOIN job_matches jm ON jm.job_id = j.id AND jm.profile_id = 1
-    LEFT JOIN applications a ON a.job_id = j.id
-    WHERE j.source IN ('gmail_alert', 'superset', 'email')
+    WHERE j.source IN ('gmail_alert', 'gmail', 'superset', 'email')
     ORDER BY j.created_at DESC LIMIT ?
   `).all(limit);
 }
@@ -643,15 +673,12 @@ export function getJob(id) {
   return db.prepare(`
     SELECT 
       j.*,
-      COALESCE(jm.score, j.match_score) as match_score,
-      COALESCE(jm.reasoning, j.match_reason) as match_reason,
-      COALESCE(td.tailored_resume, j.tailored_resume) as tailored_resume,
-      COALESCE(td.tailored_cover_letter, j.tailored_cover_letter) as tailored_cover_letter,
-      COALESCE(a.status, j.status, 'new') as app_status
+      COALESCE((SELECT score FROM job_matches WHERE job_id = j.id ORDER BY id DESC LIMIT 1), j.match_score) as match_score,
+      COALESCE((SELECT reasoning FROM job_matches WHERE job_id = j.id ORDER BY id DESC LIMIT 1), j.match_reason) as match_reason,
+      COALESCE((SELECT tailored_resume FROM tailored_documents WHERE job_id = j.id ORDER BY id DESC LIMIT 1), j.tailored_resume) as tailored_resume,
+      COALESCE((SELECT tailored_cover_letter FROM tailored_documents WHERE job_id = j.id ORDER BY id DESC LIMIT 1), j.tailored_cover_letter) as tailored_cover_letter,
+      COALESCE(j.status, 'new') as app_status
     FROM jobs j
-    LEFT JOIN job_matches jm ON jm.job_id = j.id AND jm.profile_id = 1
-    LEFT JOIN tailored_documents td ON td.job_id = j.id AND td.profile_id = 1
-    LEFT JOIN applications a ON a.job_id = j.id
     WHERE j.id = ?
   `).get(id);
 }
